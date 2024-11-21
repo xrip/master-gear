@@ -142,7 +142,9 @@ void OutZ80(register word port, register byte value) {
             vdp_read_buffer = value;
 
             switch (vdp_code_register) {
-                case 0 ... 2: VRAM[vdp_address_register] = value;
+                case 0:
+                case 1:
+                case 2: VRAM[vdp_address_register] = value;
                     break;
                 case 3: CRAM[vdp_address_register & 31] = value;
                     // printf("CRAM[%i] = %02x\n", vdp_address_register & 31, value);
