@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(master-system C CXX ASM)
+project(master-gear C CXX ASM)
 enable_language(CXX)
 SET(BUILD_NAME "${PROJECT_NAME}")
 
