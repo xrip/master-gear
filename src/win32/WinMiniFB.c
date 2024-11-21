@@ -128,7 +128,7 @@ int mfb_open(const char *title, int width, int height, int scale) {
     RegisterClass(&s_wc);
 
     rect.right = width * scale;
-    rect.bottom = (10 + height) * scale;
+    rect.bottom = (height) * scale;
 
     AdjustWindowRect(&rect, WS_POPUP | WS_SYSMENU | WS_CAPTION, 0);
 
@@ -160,7 +160,7 @@ int mfb_open(const char *title, int width, int height, int scale) {
 
     if (!s_wnd)
         return 0;
-
+/*
 // Create a menu with checkable items "Tandy Enabled" and "Switch to composite"
     HMENU hMenu = CreateMenu();
     hOptionsMenu = CreateMenu();
@@ -171,6 +171,7 @@ int mfb_open(const char *title, int width, int height, int scale) {
     AppendMenu(hMenu, MF_POPUP, (UINT_PTR) hOptionsMenu, "Options");
 
     SetMenu(s_wnd, hMenu);
+    */
     ShowWindow(s_wnd, SW_NORMAL);
 
     s_bitmapInfo = (BITMAPINFO *) malloc(sizeof(BITMAPINFO) + sizeof(RGBQUAD) * 256);
