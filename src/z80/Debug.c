@@ -1,4 +1,3 @@
-#pragma once
 /** Z80: portable Z80 emulator *******************************/
 /**                                                         **/
 /**                         Debug.c                         **/

@@ -302,10 +302,11 @@ static inline void sms_update() {
         }
         // Iterate through all 64 sprites
         for (int sprite_index = 0; sprite_index < SPRITE_COUNT; ++sprite_index) {
-            const uint8_t sprite_y = 1+ sprite_table[sprite_index];
+            const uint8_t sprite_y = sprite_table[sprite_index] + 1;
             if (scanline >= sprite_y && scanline < sprite_y + sprite_size) {
                 const uint8_t sprite_x = sprite_table[128 + sprite_index * 2];
-                const uint16_t sprite_pattern_offset = sprites_offset + (sprite_table[128 + sprite_index * 2 + 1] * 32)  + (scanline - sprite_y) * 4;
+                const uint8_t tile_index = sprite_table[128 + sprite_index * 2 + 1];
+                const uint16_t sprite_pattern_offset = sprites_offset + (tile_index * 32) + (scanline - sprite_y) * 4;
 
                 // Extract Tile pattern
                 const uint8_t *pattern_planes = &VRAM[sprite_pattern_offset];
@@ -316,11 +317,11 @@ static inline void sms_update() {
 
                 uint8_t *sprite_screen_pixels = SCREEN + scanline * SMS_WIDTH + sprite_x;
 
-                for (uint8_t x =0; x < 8; ++x) {
-                    const uint8_t bit = 7 - x;
+                #pragma GCC unroll(8)
+                for (int8_t bit = 7; bit >= 0; --bit) {
                     const uint8_t color = (plane0 >> bit & 1) | (plane1 >> bit & 1) << 1 | (plane2 >> bit & 1) << 2 | (plane3 >> bit & 1) << 3;
                     if (color) {
-                        sprite_screen_pixels[x] = 16 + color;
+                        sprite_screen_pixels[7-bit] = 16 + color;
                     }
                 }
                 /*
