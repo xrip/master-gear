@@ -240,7 +240,7 @@ void psg_update() {
 
 // Sega Master System Frame update cycle
 static inline void sms_update() {
-    uint8_t *screen_pixel = SCREEN;
+
     const uint8_t *nametable = VRAM + vdp_nametable;
     const uint8_t *sprite_table = VRAM + vdp_sprite_attribute_table;
 
@@ -249,13 +249,21 @@ static inline void sms_update() {
     const uint8_t sprites_offset = (vdp_register[6] >> 2 & 1) * 256;
 
     for (uint8_t scanline = 0; scanline < 192; scanline++) {
+        const int hscroll = vdp_register[0] & 0x40 && scanline < 0x10  ? 0 : 0x100 - vdp_register[8];
+        int nt_scroll = (hscroll >> 3);
+        int shift = (hscroll & 7);
+        // const uint8_t fine_scroll_x = horizontal_disabled ? 0 : vdp_register[8] & 7; // fine_x
+        uint8_t *screen_pixel = SCREEN + scanline * SMS_WIDTH + (0 - shift);
+
+
         const uint8_t screen_row = scanline / 8;
         const uint8_t tile_row = scanline & 7;
 
-        const uint16_t * tile_ptr = (uint16_t * )(nametable + screen_row * 64);
+        const uint16_t * tile_ptr = (uint16_t *)((nametable + screen_row * 64) );
+        for (uint8_t column = 0; column < 32; ++column) {
 
-        for (int column = 0; column < 32; ++column) {
-            const uint16_t tile_info = *tile_ptr++;
+            // const uint16_t horizontal_offset = ;
+            const uint16_t tile_info = tile_ptr[(column + nt_scroll) & 0x1f];
 
             const uint8_t palette_offset = (tile_info >> 11 & 1) * 16; // palette select
             const uint16_t pattern_offset = tile_info >> 10 & 1 ? (7 - tile_row) * 4 : tile_row * 4; // vertical flip
@@ -324,16 +332,6 @@ static inline void sms_update() {
                         sprite_screen_pixels[7-bit] = 16 + color;
                     }
                 }
-                /*
-                *sprite_screen_pixels++ = 16 + (plane0 >> 7 & 1) | (plane1 >> 7 & 1) << 1 | (plane2 >> 7 & 1) << 2 | (plane3 >> 7 & 1) << 3;
-                *sprite_screen_pixels++ = 16 + (plane0 >> 6 & 1) | (plane1 >> 6 & 1) << 1 | (plane2 >> 6 & 1) << 2 | (plane3 >> 6 & 1) << 3;
-                *sprite_screen_pixels++ = 16 + (plane0 >> 5 & 1) | (plane1 >> 5 & 1) << 1 | (plane2 >> 5 & 1) << 2 | (plane3 >> 5 & 1) << 3;
-                *sprite_screen_pixels++ = 16 + (plane0 >> 4 & 1) | (plane1 >> 4 & 1) << 1 | (plane2 >> 4 & 1) << 2 | (plane3 >> 4 & 1) << 3;
-                *sprite_screen_pixels++ = 16 + (plane0 >> 3 & 1) | (plane1 >> 3 & 1) << 1 | (plane2 >> 3 & 1) << 2 | (plane3 >> 3 & 1) << 3;
-                *sprite_screen_pixels++ = 16 + (plane0 >> 2 & 1) | (plane1 >> 2 & 1) << 1 | (plane2 >> 2 & 1) << 2 | (plane3 >> 2 & 1) << 3;
-                *sprite_screen_pixels++ = 16 + (plane0 >> 1 & 1) | (plane1 >> 1 & 1) << 1 | (plane2 >> 1 & 1) << 2 | (plane3 >> 1 & 1) << 3;
-                *sprite_screen_pixels++ = 16 + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1) << 3;
-                **/
             }
         }
         v_counter = scanline;
@@ -347,7 +345,7 @@ int main(int argc, char **argv) {
         exit(-1);
     }
 
-    if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, 2))
+    if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, 4))
         return 1;
 
 
@@ -367,7 +365,8 @@ int main(int argc, char **argv) {
         sms_update();
         psg_update();
         v_counter = 0;
-        vdp_status = 1 << 7;
+        vdp_status |= 0x80;
+        // vdp_status |= 0x40;
         IntZ80(&cpu, INT_IRQ);
 
         if (mfb_update(SCREEN, 60) == -1)
