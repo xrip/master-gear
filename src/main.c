@@ -16,8 +16,8 @@ uint8_t ROM[1024 << 10] = {0};
 uint8_t RAM_BANK[2][16384] = {0};
 
 uint8_t *rom_slot1 = ROM;
-uint8_t *rom_slot2 = ROM;
-uint8_t *ram_rom_slot3 = ROM;
+uint8_t *rom_slot2 = ROM + 0x4000;
+uint8_t *ram_rom_slot3 = ROM + 0x8000;
 
 uint8_t slot3_is_ram = 0;
 
@@ -45,12 +45,10 @@ void WrZ80(register word address, const register byte value) {
                     break;
                 case 0xFFFD:
                     rom_slot1 = ROM + page * 0x4000;
-                    // rom_slot1 -= 0x4000;
                     printf("slot 1 is ROM page %i\n", page);
                     break;
                 case 0xFFFE:
                     rom_slot2 = ROM + page * 0x4000;
-                    rom_slot2 -= 0x4000;
                     printf("slot 2 is ROM page %i\n", page);
                     break;
                 case 0xFFFF:
@@ -60,7 +58,6 @@ void WrZ80(register word address, const register byte value) {
                     } else {
                         printf("slot 3 is ROM page %i\n", page);
                         ram_rom_slot3 = ROM + page * 0x4000;
-                        ram_rom_slot3 -= 0x8000;
                     }
                     break;
             }
@@ -75,16 +72,16 @@ byte RdZ80(const register word address) {
         return ROM[address];
     }
 
-    if (address <= 0x3FFF) {
+    if (address < 0x4000) {
         return rom_slot1[address];
     }
 
-    if (address <= 0x7FFF) {
-        return rom_slot2[address];
+    if (address < 0x8000) {
+        return rom_slot2[address - 0x4000];
     }
 
-    if (address <= 0xBFFF) {
-        return ram_rom_slot3[address];
+    if (address < 0xC000) {
+        return ram_rom_slot3[address - 0x8000];
     }
 
     return RAM[(address - 0xC000) % 8192];
