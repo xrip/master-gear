@@ -30,35 +30,37 @@ void WrZ80(register word address, const register byte value) {
     }
 
     if (address >= 0xC000) {
-        address = (address - 0xC000) % 8192;
-        RAM[address] = value;
+        RAM[(address - 0xC000) % 8192] = value;
 
-        if (address >= 0xDFFC) {
+        if (address >= 0xFFFC) {
             // Memory paging
             const uint8_t page = value & 0x1F;
             switch (address) {
-                case 0xDFFC:
+                case 0xFFFC:
                     if (value & 0b1000) {
                         slot3_is_ram = 1 + value >> 2; // ram bank 2 or 1
                     } else {
                         slot3_is_ram = 0;
                     }
                     break;
-                case 0xDFFD:
+                case 0xFFFD:
                     rom_slot1 = ROM + page * 0x4000;
+                    // rom_slot1 -= 0x4000;
                     printf("slot 1 is ROM page %i\n", page);
                     break;
-                case 0xDFFE:
+                case 0xFFFE:
                     rom_slot2 = ROM + page * 0x4000;
+                    rom_slot2 -= 0x4000;
                     printf("slot 2 is ROM page %i\n", page);
                     break;
-                case 0xDFFF:
+                case 0xFFFF:
                     if (slot3_is_ram) {
                         ram_rom_slot3 = RAM_BANK[slot3_is_ram - 1];
                         printf("slot 3 is RAM bank %i\n", slot3_is_ram - 1);
                     } else {
                         printf("slot 3 is ROM page %i\n", page);
                         ram_rom_slot3 = ROM + page * 0x4000;
+                        ram_rom_slot3 -= 0x8000;
                     }
                     break;
             }
