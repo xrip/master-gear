@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <windows.h>
 #include "win32/MiniFB.h"
+#include "win32/audio.h"
 #include "z80/z80.h"
 #include "sn76489.h"
 
@@ -15,7 +16,6 @@ Z80 cpu;
 #define LINES_PER_FRAME     (262)
 #define FRAMES_PER_SECOND   (60)
 #define CYCLES_PER_LINE     ((MASTER_CLOCK / FRAMES_PER_SECOND) / LINES_PER_FRAME)
-// #define CYCLES_PER_LINE     227
 
 /* Return values from the V counter */
 const uint8_t vcnt[0x200] =
@@ -57,7 +57,7 @@ const uint8_t hcnt[0x200] =
     0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF,
     0xD0, 0xD1, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xDB, 0xDC, 0xDD, 0xDE, 0xDF,
     0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9,
-                      0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F,
+    0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F,
     0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF,
     0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF,
     0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF,
@@ -111,7 +111,7 @@ void WrZ80(register word address, const register byte value) {
                 case 0xFFFE:
                     rom_slot2 = ROM + page * 0x4000;
                     rom_slot2 -= 0x4000;
-                 // printf("slot 2 is ROM page %i\n", page);
+                // printf("slot 2 is ROM page %i\n", page);
                     break;
                 case 0xFFFF:
                     if (slot3_is_ram) {
@@ -266,7 +266,6 @@ byte InZ80(register word port) {
             printf("HCOUNTER read\n");
             int pixel = (((cpu.ICount % CYCLES_PER_LINE) / 4) * 3) * 2;
             return (hcnt[((pixel >> 1) & 0x1FF)]);
-
         }
         case 0xBE: // Data register
             vdp_latch = 0;
@@ -278,7 +277,7 @@ byte InZ80(register word port) {
             uint8_t temp_status = vdp_status;
             vdp_latch = 0;
 
-            /* Clear pending interrupt and sprite collision flags */
+        /* Clear pending interrupt and sprite collision flags */
             vdp_status &= ~(0x80 | 0x40 | 0x20);
 
             return temp_status;
@@ -321,9 +320,6 @@ static inline size_t readfile(const char *pathname, uint8_t *dst) {
     return rom_size;
 }
 
-void psg_update() {
-}
-
 #define SPRITE_COUNT 64
 #define SPRITE_HEIGHT 8
 
@@ -341,8 +337,8 @@ static inline void sms_frame() {
     const uint8_t vshift = vdp_register[9] & 7;
 
     for (uint8_t scanline = 0; scanline < 192; scanline++) {
-        uint8_t priority_table[SMS_WIDTH+8];
-        uint8_t * priority_table_ptr = priority_table + 8;
+        uint8_t priority_table[SMS_WIDTH + 8];
+        uint8_t *priority_table_ptr = priority_table + 8;
 
         const int hscroll = vdp_register[0] & 0x40 && scanline < 0x10 ? 0 : 0x100 - vdp_register[8];
         const int nt_scroll = (hscroll >> 3);
@@ -358,6 +354,7 @@ static inline void sms_frame() {
         // background rendering loop
         for (uint8_t column = 0; column < 32; ++column) {
             const uint16_t tile_info = tile_ptr[(column + nt_scroll) & 0x1f];
+            const uint8_t priority = tile_info >> 12 & 1;
 
             const uint8_t palette_offset = (tile_info >> 11 & 1) * 16; // palette select
             const uint16_t pattern_offset = tile_info >> 10 & 1 ? (7 - tile_row) * 4 : tile_row * 4; // vertical flip
@@ -419,27 +416,24 @@ static inline void sms_frame() {
                                   << 3;
             }
 
-/**/
             // if background priority
-            const uint8_t priority = tile_info >> 12 & 1;
-            screen_pixel-=8;
+            screen_pixel -= 8;
             for (uint8_t x = 0; x < 8; x++) {
                 *priority_table_ptr++ = priority && *screen_pixel != palette_offset;
                 screen_pixel++;
             }
-/**/
         }
 
         // Sprites rendering loop
         for (int sprite_index = 0; sprite_index < SPRITE_COUNT; ++sprite_index) {
             const uint8_t sprite_y = sprite_table[sprite_index] + 1;
             if (scanline >= sprite_y && scanline < sprite_y + sprite_size) {
-
                 const uint8_t sprite_x = sprite_table[128 + sprite_index * 2];
-                // todo vdp_register(0] & 8 shift -8
+                const int8_t sprite_x_offset = vdp_register[0] >> 3 & 1 ? -8 : 0;
+
                 const uint16_t tile_index = sprites_offset + sprite_table[128 + sprite_index * 2 + 1];
                 const uint16_t sprite_pattern_offset = (tile_index * 32) + (scanline - sprite_y) * 4;
-                const int8_t sprite_x_offset = vdp_register[0] >> 3 & 1 ? -8 : 0;
+
 
                 // Extract Tile pattern
                 const uint8_t *pattern_planes = &VRAM[sprite_pattern_offset];
@@ -477,106 +471,18 @@ static inline void sms_frame() {
     vdp_status |= 0x80;
 }
 
-HANDLE updateEvent;
-
-#define AUDIO_BUFFER_LENGTH ((SOUND_FREQUENCY / 10))
-static int16_t audio_buffer[AUDIO_BUFFER_LENGTH * 2] = {};
-static int sample_index = 0;
-
-DWORD WINAPI SoundThread(LPVOID lpParam) {
-    WAVEHDR waveHeaders[4];
-
-    WAVEFORMATEX format = {0};
-    format.wFormatTag = WAVE_FORMAT_PCM;
-    format.nChannels = 2;
-    format.nSamplesPerSec = SOUND_FREQUENCY;
-    format.wBitsPerSample = 16;
-    format.nBlockAlign = format.nChannels * format.wBitsPerSample / 8;
-    format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
-
-    HANDLE waveEvent = CreateEvent(NULL, 1, 0, NULL);
-
-    HWAVEOUT hWaveOut;
-    waveOutOpen(&hWaveOut, WAVE_MAPPER, &format, (DWORD_PTR) waveEvent, 0, CALLBACK_EVENT);
-
-    for (size_t i = 0; i < 4; i++) {
-        int16_t audio_buffers[4][AUDIO_BUFFER_LENGTH * 2];
-        waveHeaders[i] = (WAVEHDR){
-            .lpData = (char *) audio_buffers[i],
-            .dwBufferLength = AUDIO_BUFFER_LENGTH * 2,
-        };
-        waveOutPrepareHeader(hWaveOut, &waveHeaders[i], sizeof(WAVEHDR));
-        waveHeaders[i].dwFlags |= WHDR_DONE;
-    }
-    WAVEHDR *currentHeader = waveHeaders;
-
-
-    while (1) {
-        if (WaitForSingleObject(waveEvent, INFINITE)) {
-            //            fprintf(stderr, "Failed to wait for event.\n");
-            return 1;
-        }
-
-        if (!ResetEvent(waveEvent)) {
-            //            fprintf(stderr, "Failed to reset event.\n");
-            return 1;
-        }
-
-        // Wait until audio finishes playing
-        while (currentHeader->dwFlags & WHDR_DONE) {
-            WaitForSingleObject(updateEvent, INFINITE);
-            ResetEvent(updateEvent);
-            //            PSG_calc_stereo(&psg, audiobuffer, AUDIO_BUFFER_LENGTH);
-            memcpy(currentHeader->lpData, audio_buffer, AUDIO_BUFFER_LENGTH * 2);
-            waveOutWrite(hWaveOut, currentHeader, sizeof(WAVEHDR));
-            //waveOutPrepareHeader(hWaveOut, currentHeader, sizeof(WAVEHDR));
-            currentHeader++;
-            if (currentHeader == waveHeaders + 4) { currentHeader = waveHeaders; }
-        }
-    }
-    return 0;
-}
-
-DWORD WINAPI TicksThread(LPVOID lpParam) {
-    LARGE_INTEGER start, current, queryperf;
-
-
-    QueryPerformanceFrequency(&queryperf);
-    uint32_t hostfreq = (uint32_t) queryperf.QuadPart;
-
-    QueryPerformanceCounter(&start); // Get the starting time
-    uint32_t last_sound_tick = 0;
-
-
-    updateEvent = CreateEvent(NULL, 1, 1, NULL);
-    while (1) {
-        QueryPerformanceCounter(&current); // Get the current time
-
-        // Calculate elapsed time in ticks since the start
-        uint32_t elapsedTime = (uint32_t) (current.QuadPart - start.QuadPart);
-
-        if (elapsedTime - last_sound_tick >= hostfreq / SOUND_FREQUENCY) {
-            const int16_t sample = sn76489_sample();
-            audio_buffer[sample_index++] = sample;
-            audio_buffer[sample_index++] = sample;
-
-            if (sample_index >= AUDIO_BUFFER_LENGTH) {
-                SetEvent(updateEvent);
-                sample_index = 0;
-            }
-
-            last_sound_tick = elapsedTime;
-        }
-    }
-}
 
 int main(int argc, char **argv) {
+    int scale = 4;
     if (!argv[1]) {
-        printf("Usage: gamate.exe <rom.bin> [scale_factor] [ghosting_level]\n");
+        printf("Usage: master-gear.exe <rom.bin> [scale_factor]\n");
         exit(-1);
     }
+    if (argc > 2) {
+        scale = atoi(argv[2]);
+    }
 
-    if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, 4))
+    if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, scale))
         return 1;
     key_status = (uint8_t *) mfb_keystatus();
 
