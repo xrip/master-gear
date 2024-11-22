@@ -10,7 +10,7 @@
 #define SMS_WIDTH 256
 #define SMS_HEIGHT 224
 
-uint8_t SCREEN[SMS_WIDTH * SMS_HEIGHT + 8] = {0};  // +8 possible sprite overflow
+uint8_t SCREEN[SMS_WIDTH * SMS_HEIGHT + 8] = {0}; // +8 possible sprite overflow
 
 uint8_t RAM[8192] = {0};
 uint8_t ROM[1024 << 10] = {0};
@@ -22,35 +22,36 @@ uint8_t *ram_rom_slot3 = ROM;
 
 uint8_t slot3_is_ram = 0;
 static uint8_t *key_status;
+
 void WrZ80(register word address, const register byte value) {
     // printf("Write %04x to %04x\n", value, address);
     if (address >= 0x8000 && address < 0xC000 && slot3_is_ram) {
-        ram_rom_slot3[address] = value;
+        ram_rom_slot3[address-0x8000] = value;
         return;
     }
 
     if (address >= 0xC000) {
-        RAM[(address - 0xC000) % 8192] = value;
+        RAM[address & 8191] = value;
 
         if (address >= 0xFFFC) {
             // Memory paging
-            const uint8_t page = value & 0x1F;
+            const uint8_t page = value & 0x7f;
             switch (address) {
                 case 0xFFFC:
-                    if (value & 0b1000) {
-                        slot3_is_ram = 1 + value >> 2; // ram bank 2 or 1
+                    if (value >> 3 & 1) {
+                        slot3_is_ram = 1 + (value >> 2); // ram bank 2 or 1
                     } else {
                         slot3_is_ram = 0;
                     }
                     break;
                 case 0xFFFD:
                     rom_slot1 = ROM + page * 0x4000;
-                    // printf("slot 1 is ROM page %i\n", page);
+                // printf("slot 1 is ROM page %i\n", page);
                     break;
                 case 0xFFFE:
                     rom_slot2 = ROM + page * 0x4000;
                     rom_slot2 -= 0x4000;
-                    // printf("slot 2 is ROM page %i\n", page);
+                // printf("slot 2 is ROM page %i\n", page);
                     break;
                 case 0xFFFF:
                     if (slot3_is_ram) {
@@ -59,8 +60,8 @@ void WrZ80(register word address, const register byte value) {
                     } else {
                         // printf("slot 3 is ROM page %i\n", page);
                         ram_rom_slot3 = ROM + page * 0x4000;
-                        ram_rom_slot3 -= 0x8000;
                     }
+                    ram_rom_slot3 -= 0x8000;
                     break;
             }
         }
@@ -69,7 +70,8 @@ void WrZ80(register word address, const register byte value) {
 
 byte RdZ80(const register word address) {
     // printf("Mem read %x\n", address);
-    if (address <= 1024) { // fixed 1kb
+    if (address <= 1024) {
+        // fixed 1kb
         // non pageable
         return ROM[address];
     }
@@ -86,7 +88,7 @@ byte RdZ80(const register word address) {
         return ram_rom_slot3[address];
     }
 
-    return RAM[(address - 0xC000) & 8191];
+    return RAM[address & 8191];
 }
 
 /*
@@ -134,8 +136,10 @@ uint8_t vdp_read_byte() {
 void OutZ80(register word port, register byte value) {
     // printf("Z80 out port %02x value %02x\n", port & 0xff, value);
     switch (port & 0xff) {
-        case 0x7E: sn76489_out(value); break; // SN76489
-        case 0x7F: sn76489_out(value); break; // SN76489
+        case 0x7E: sn76489_out(value);
+            break; // SN76489
+        case 0x7F: sn76489_out(value);
+            break; // SN76489
 
         case 0xBE: // Data register
             vdp_latch = 0;
@@ -147,7 +151,7 @@ void OutZ80(register word port, register byte value) {
                 case 2: VRAM[vdp_address_register] = value;
                     break;
                 case 3: CRAM[vdp_address_register & 31] = value;
-                    // printf("CRAM[%i] = %02x\n", vdp_address_register & 31, value);
+                // printf("CRAM[%i] = %02x\n", vdp_address_register & 31, value);
 
                 // TODO:
                     mfb_set_pallete(vdp_address_register & 31,
@@ -211,20 +215,19 @@ byte InZ80(register word port) {
             return vdp_status;
 
         case 0xC0:
-            case 0xDC:
-        uint8_t buttons = 0xff;
+        case 0xDC:
+            uint8_t buttons = 0xff;
 
-        if (key_status[0x26]) buttons ^= 0b1;
-        if (key_status[0x28]) buttons ^= 0b10;
-        if (key_status[0x25]) buttons ^= 0b100;
-        if (key_status[0x27]) buttons ^= 0b1000;
-        if (key_status['Z']) buttons ^= 0b10000;
-        if (key_status['X']) buttons ^= 0b100000;
+            if (key_status[0x26]) buttons ^= 0b1;
+            if (key_status[0x28]) buttons ^= 0b10;
+            if (key_status[0x25]) buttons ^= 0b100;
+            if (key_status[0x27]) buttons ^= 0b1000;
+            if (key_status['Z']) buttons ^= 0b10000;
+            if (key_status['X']) buttons ^= 0b100000;
         // if (key_status[0x0d]) buttons ^= 0b1000000;
         // if (key_status[0x20]) buttons ^= 0b10000000;
 
-        return buttons;
-
+            return buttons;
     }
     return 0xff;
 }
@@ -259,7 +262,6 @@ void psg_update() {
 
 // Sega Master System Frame update cycle
 static inline void sms_update() {
-
     const uint8_t *nametable = VRAM + vdp_nametable;
     const uint8_t *sprite_table = VRAM + vdp_sprite_attribute_table;
 
@@ -271,7 +273,7 @@ static inline void sms_update() {
     const uint8_t vshift = vdp_register[9] & 7;
 
     for (uint8_t scanline = 0; scanline < 192; scanline++) {
-        const int hscroll = vdp_register[0] & 0x40 && scanline < 0x10  ? 0 : 0x100 - vdp_register[8];
+        const int hscroll = vdp_register[0] & 0x40 && scanline < 0x10 ? 0 : 0x100 - vdp_register[8];
         const int nt_scroll = (hscroll >> 3);
         const int hshift = (hscroll & 7);
         // const uint8_t fine_scroll_x = horizontal_disabled ? 0 : vdp_register[8] & 7; // fine_x
@@ -280,11 +282,10 @@ static inline void sms_update() {
         const uint8_t screen_row = (vscroll + scanline) % 224 / 8;
         const uint8_t tile_row = (vshift + scanline) & 7;
 
-        const uint16_t * tile_ptr = (uint16_t *)(nametable + screen_row * 64);
+        const uint16_t *tile_ptr = (uint16_t *) (nametable + screen_row * 64);
 
         // background rendering loop
         for (uint8_t column = 0; column < 32; ++column) {
-
             // const uint16_t horizontal_offset = ;
             const uint16_t tile_info = tile_ptr[(column + nt_scroll) & 0x1f];
 
@@ -298,37 +299,54 @@ static inline void sms_update() {
             const uint8_t plane2 = pattern_planes[2];
             const uint8_t plane3 = pattern_planes[3];
 
-/* unrolled loop
-            for (int x = 0; x < 8; ++x) {
-                const uint8_t bit = 7 - x; // non flipped
-                const uint8_t color = palette_offset +
-                ((plane0 >> bit) & 1) |
-                ((plane1 >> bit) & 1) << 1 |
-                ((plane2 >> bit) & 1) << 2 |
-                ((plane3 >> bit) & 1) << 3;
-                *screen_pixel++ = color;
-            }
-*/
+            /* unrolled loop
+                        for (int x = 0; x < 8; ++x) {
+                            const uint8_t bit = 7 - x; // non flipped
+                            const uint8_t color = palette_offset +
+                            ((plane0 >> bit) & 1) |
+                            ((plane1 >> bit) & 1) << 1 |
+                            ((plane2 >> bit) & 1) << 2 |
+                            ((plane3 >> bit) & 1) << 3;
+                            *screen_pixel++ = color;
+                        }
+            */
 
             // render background
-            if (tile_info >> 9 & 1) { // horizontal flip
-                *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 1 & 1) | (plane1 >> 1 & 1) << 1 | (plane2 >> 1 & 1) << 2 | (plane3 >> 1 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 2 & 1) | (plane1 >> 2 & 1) << 1 | (plane2 >> 2 & 1) << 2 | (plane3 >> 2 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 3 & 1) | (plane1 >> 3 & 1) << 1 | (plane2 >> 3 & 1) << 2 | (plane3 >> 3 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 4 & 1) | (plane1 >> 4 & 1) << 1 | (plane2 >> 4 & 1) << 2 | (plane3 >> 4 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 5 & 1) | (plane1 >> 5 & 1) << 1 | (plane2 >> 5 & 1) << 2 | (plane3 >> 5 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 6 & 1) | (plane1 >> 6 & 1) << 1 | (plane2 >> 6 & 1) << 2 | (plane3 >> 6 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 7 & 1) | (plane1 >> 7 & 1) << 1 | (plane2 >> 7 & 1) << 2 | (plane3 >> 7 & 1) << 3;
+            if (tile_info >> 9 & 1) {
+                // horizontal flip
+                *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1)
+                                  << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 1 & 1) | (plane1 >> 1 & 1) << 1 | (plane2 >> 1 & 1) << 2 |
+                                  (plane3 >> 1 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 2 & 1) | (plane1 >> 2 & 1) << 1 | (plane2 >> 2 & 1) << 2 |
+                                  (plane3 >> 2 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 3 & 1) | (plane1 >> 3 & 1) << 1 | (plane2 >> 3 & 1) << 2 |
+                                  (plane3 >> 3 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 4 & 1) | (plane1 >> 4 & 1) << 1 | (plane2 >> 4 & 1) << 2 |
+                                  (plane3 >> 4 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 5 & 1) | (plane1 >> 5 & 1) << 1 | (plane2 >> 5 & 1) << 2 |
+                                  (plane3 >> 5 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 6 & 1) | (plane1 >> 6 & 1) << 1 | (plane2 >> 6 & 1) << 2 |
+                                  (plane3 >> 6 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 7 & 1) | (plane1 >> 7 & 1) << 1 | (plane2 >> 7 & 1) << 2 |
+                                  (plane3 >> 7 & 1) << 3;
             } else {
-                *screen_pixel++ = palette_offset + (plane0 >> 7 & 1) | (plane1 >> 7 & 1) << 1 | (plane2 >> 7 & 1) << 2 | (plane3 >> 7 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 6 & 1) | (plane1 >> 6 & 1) << 1 | (plane2 >> 6 & 1) << 2 | (plane3 >> 6 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 5 & 1) | (plane1 >> 5 & 1) << 1 | (plane2 >> 5 & 1) << 2 | (plane3 >> 5 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 4 & 1) | (plane1 >> 4 & 1) << 1 | (plane2 >> 4 & 1) << 2 | (plane3 >> 4 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 3 & 1) | (plane1 >> 3 & 1) << 1 | (plane2 >> 3 & 1) << 2 | (plane3 >> 3 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 2 & 1) | (plane1 >> 2 & 1) << 1 | (plane2 >> 2 & 1) << 2 | (plane3 >> 2 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 1 & 1) | (plane1 >> 1 & 1) << 1 | (plane2 >> 1 & 1) << 2 | (plane3 >> 1 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 7 & 1) | (plane1 >> 7 & 1) << 1 | (plane2 >> 7 & 1) << 2 |
+                                  (plane3 >> 7 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 6 & 1) | (plane1 >> 6 & 1) << 1 | (plane2 >> 6 & 1) << 2 |
+                                  (plane3 >> 6 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 5 & 1) | (plane1 >> 5 & 1) << 1 | (plane2 >> 5 & 1) << 2 |
+                                  (plane3 >> 5 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 4 & 1) | (plane1 >> 4 & 1) << 1 | (plane2 >> 4 & 1) << 2 |
+                                  (plane3 >> 4 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 3 & 1) | (plane1 >> 3 & 1) << 1 | (plane2 >> 3 & 1) << 2 |
+                                  (plane3 >> 3 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 2 & 1) | (plane1 >> 2 & 1) << 1 | (plane2 >> 2 & 1) << 2 |
+                                  (plane3 >> 2 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 1 & 1) | (plane1 >> 1 & 1) << 1 | (plane2 >> 1 & 1) << 2 |
+                                  (plane3 >> 1 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1)
+                                  << 3;
             }
         }
 
@@ -339,7 +357,7 @@ static inline void sms_update() {
                 const uint8_t sprite_x = sprite_table[128 + sprite_index * 2];
                 // todo vdp_register(0] & 8 shift -8
                 const uint8_t tile_index = sprite_table[128 + sprite_index * 2 + 1];
-                const uint16_t sprite_pattern_offset =  sprites_offset +  (tile_index * 32) + (scanline - sprite_y) * 4;
+                const uint16_t sprite_pattern_offset = sprites_offset + (tile_index * 32) + (scanline - sprite_y) * 4;
 
                 // Extract Tile pattern
                 const uint8_t *pattern_planes = &VRAM[sprite_pattern_offset];
@@ -350,11 +368,12 @@ static inline void sms_update() {
 
                 uint8_t *sprite_screen_pixels = SCREEN + scanline * SMS_WIDTH + (sprite_x);
 
-                #pragma GCC unroll(8)
+#pragma GCC unroll(8)
                 for (int8_t bit = 7; bit >= 0; --bit) {
-                    const uint8_t color = (plane0 >> bit & 1) | (plane1 >> bit & 1) << 1 | (plane2 >> bit & 1) << 2 | (plane3 >> bit & 1) << 3;
+                    const uint8_t color = (plane0 >> bit & 1) | (plane1 >> bit & 1) << 1 | (plane2 >> bit & 1) << 2 | (
+                                              plane3 >> bit & 1) << 3;
                     if (color) {
-                        sprite_screen_pixels[7-bit] = 16 + color;
+                        sprite_screen_pixels[7 - bit] = 16 + color;
                     }
                 }
             }
@@ -435,7 +454,6 @@ DWORD WINAPI TicksThread(LPVOID lpParam) {
     uint32_t last_sound_tick = 0;
 
 
-
     updateEvent = CreateEvent(NULL, 1, 1, NULL);
     while (1) {
         QueryPerformanceCounter(&current); // Get the current time
@@ -490,7 +508,7 @@ int main(int argc, char **argv) {
         vdp_status |= 0x80;
         // vdp_status |= 0x40;
         IntZ80(&cpu, INT_IRQ);
-        ExecZ80(&cpu, 272*(224-192)); // vblank period
+        ExecZ80(&cpu, 272 * (224 - 192)); // vblank period
         if (mfb_update(SCREEN, 60) == -1)
             exit(1);
     }
