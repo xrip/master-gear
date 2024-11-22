@@ -4,6 +4,9 @@
 #define FRAMES_PER_SECOND   (60)
 #define CYCLES_PER_LINE     ((MASTER_CLOCK / FRAMES_PER_SECOND) / LINES_PER_FRAME)
 
+#define SMS_WIDTH 256
+#define SMS_HEIGHT 224
+
 /* Return values from the V counter */
 const uint8_t vcnt[0x200] =
 {
@@ -54,5 +57,3 @@ const uint8_t hcnt[0x200] =
 };
 
 
-#define SMS_WIDTH 256
-#define SMS_HEIGHT 224

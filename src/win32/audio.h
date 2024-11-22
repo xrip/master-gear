@@ -1,10 +1,11 @@
+#pragma once
 #include <windows.h>
 #include <stdint.h>
 #include "../sn76489.h"
 HANDLE updateEvent;
 
 #define AUDIO_BUFFER_LENGTH ((SOUND_FREQUENCY / 10))
-static int16_t audio_buffer[AUDIO_BUFFER_LENGTH * 2] = {};
+static int16_t audio_buffer[AUDIO_BUFFER_LENGTH * 2] = { 0 };
 static int sample_index = 0;
 
 DWORD WINAPI SoundThread(LPVOID lpParam) {

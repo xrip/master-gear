@@ -13,7 +13,6 @@
 Z80 cpu;
 
 
-
 uint8_t SCREEN[SMS_WIDTH * SMS_HEIGHT + 8] = {0}; // +8 possible sprite overflow
 
 uint8_t RAM[8192] = {0};
@@ -26,6 +25,8 @@ uint8_t *ram_rom_slot3 = ROM;
 
 uint8_t slot3_is_ram = 0;
 static uint8_t *key_status;
+
+uint8_t is_gamegear = 0;
 
 void WrZ80(register word address, const register byte value) {
     // printf("Write %04x to %04x\n", value, address);
@@ -154,16 +155,33 @@ void OutZ80(register word port, register byte value) {
                 case 1:
                 case 2: VRAM[vdp_address_register] = value;
                     break;
-                case 3: CRAM[vdp_address_register & 31] = value;
-                // printf("CRAM[%i] = %02x\n", vdp_address_register & 31, value);
+                case 3:
+                    if (is_gamegear) {
+                        CRAM[vdp_address_register & 63] = value;
+                        static uint16_t gamegear_color_latch;
 
-                // TODO:
-                    mfb_set_pallete(vdp_address_register & 31,
-                                    MFB_RGB(
-                                        (value & 3) << 6,
-                                        (value >> 2 & 3) << 6,
-                                        (value >> 4 & 3) << 6)
-                    );
+                        if (vdp_address_register & 1) {
+                            gamegear_color_latch |= value << 8;
+
+                            mfb_set_pallete(vdp_address_register >> 1,
+                                            MFB_RGB(
+                                                (gamegear_color_latch & 0b1111) << 4,
+                                                (gamegear_color_latch >> 4 & 0b1111) << 4,
+                                                (gamegear_color_latch >> 8 & 0b1111) << 4)
+                            );
+                        } else {
+                            gamegear_color_latch = value;
+                        }
+                    } else {
+                        CRAM[vdp_address_register & 31] = value;
+
+                        mfb_set_pallete(vdp_address_register & 31,
+                                        MFB_RGB(
+                                            (value & 3) << 6,
+                                            (value >> 2 & 3) << 6,
+                                            (value >> 4 & 3) << 6)
+                        );
+                    }
 
                     break;
             }
@@ -205,6 +223,14 @@ byte InZ80(register word port) {
     // printf("Z80 in %02x\n", port & 0xff);
 
     switch (port & 0xff) {
+        // gg input
+        case 0x00: {
+            uint8_t buttons = 0xff;
+            if (key_status[0x0d]) buttons ^= 0x80;
+            if (key_status[0x20]) buttons ^= 0x40;
+
+            return buttons;
+        }
         case 0x7E: return vcnt[v_counter];
         case 0x7F: {
             printf("HCOUNTER read\n");
@@ -227,7 +253,7 @@ byte InZ80(register word port) {
             return temp_status;
 
         case 0xC0:
-        case 0xDC:
+        case 0xDC: {
             uint8_t buttons = 0xff;
 
             if (key_status[0x26]) buttons ^= 0b1;
@@ -236,10 +262,11 @@ byte InZ80(register word port) {
             if (key_status[0x27]) buttons ^= 0b1000;
             if (key_status['Z']) buttons ^= 0b10000;
             if (key_status['X']) buttons ^= 0b100000;
-        // if (key_status[0x0d]) buttons ^= 0b1000000;
-        // if (key_status[0x20]) buttons ^= 0b10000000;
+            if (key_status[0x0d]) buttons ^= 0b1000000;
+            if (key_status[0x20]) buttons ^= 0b10000000;
 
             return buttons;
+        }
     }
     return 0xff;
 }
@@ -281,17 +308,18 @@ static inline void sms_frame() {
     const uint8_t vshift = vdp_register[9] & 7;
 
     for (uint8_t scanline = 0; scanline < 192; scanline++) {
-        uint8_t priority_table[SMS_WIDTH + 8];
+        uint8_t priority_table[SMS_WIDTH + 8]; // allow 8 pixels overrun
         uint8_t *priority_table_ptr = priority_table + 8;
 
         const int hscroll = vdp_register[0] & 0x40 && scanline < 0x10 ? 0 : 0x100 - vdp_register[8];
         const int nt_scroll = (hscroll >> 3);
         const int hshift = (hscroll & 7);
-        // const uint8_t fine_scroll_x = horizontal_disabled ? 0 : vdp_register[8] & 7; // fine_x
+
         uint8_t *screen_pixel = SCREEN + scanline * SMS_WIDTH + (0 - hshift);
 
-        const uint8_t screen_row = (vscroll + scanline) % 224 / 8;
-        const uint8_t tile_row = (vshift + scanline) & 7;
+        const uint16_t scanline_offset = vscroll + scanline;
+        const uint8_t screen_row = scanline_offset / 8 % 28;
+        const uint8_t tile_row = scanline_offset & 7;
 
         const uint16_t *tile_ptr = (uint16_t *) (nametable + screen_row * 64);
 
@@ -310,19 +338,6 @@ static inline void sms_frame() {
             const uint8_t plane2 = pattern_planes[2];
             const uint8_t plane3 = pattern_planes[3];
 
-            /* unrolled loop
-                        for (int x = 0; x < 8; ++x) {
-                            const uint8_t bit = 7 - x; // non flipped
-                            const uint8_t color = palette_offset +
-                            ((plane0 >> bit) & 1) |
-                            ((plane1 >> bit) & 1) << 1 |
-                            ((plane2 >> bit) & 1) << 2 |
-                            ((plane3 >> bit) & 1) << 3;
-                            *screen_pixel++ = color;
-                        }
-            */
-
-            // render background
             if (tile_info >> 9 & 1) {
                 // horizontal flip
                 *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1)
@@ -390,9 +405,7 @@ static inline void sms_frame() {
                 priority_table_ptr = priority_table + sprite_x + sprite_x_offset;
 #pragma GCC unroll(8)
                 for (int8_t bit = 7; bit >= 0; --bit) {
-                    if (*priority_table_ptr++) {
-                        continue;
-                    };
+                    if (*priority_table_ptr++) continue;
 
                     const uint8_t color = (plane0 >> bit & 1) | (plane1 >> bit & 1) << 1 | (plane2 >> bit & 1) << 2 | (
                                               plane3 >> bit & 1) << 3;
@@ -416,7 +429,7 @@ static inline void sms_frame() {
 }
 
 
-int main(int argc, char **argv) {
+int main(const int argc, char **argv) {
     int scale = 4;
     if (!argv[1]) {
         printf("Usage: master-gear.exe <rom.bin> [scale_factor]\n");
@@ -426,6 +439,13 @@ int main(int argc, char **argv) {
         scale = atoi(argv[2]);
     }
 
+    const char *filename = argv[1];
+    size_t len = strlen(filename);
+    readfile(filename, ROM);
+    if (len >= 2 && strcmp(&filename[len - 2], "gg") == 0) {
+        is_gamegear = 1;
+    }
+
     if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, scale))
         return 1;
     key_status = (uint8_t *) mfb_keystatus();
@@ -433,7 +453,7 @@ int main(int argc, char **argv) {
     CreateThread(NULL, 0, SoundThread, NULL, 0, NULL);
     CreateThread(NULL, 0, TicksThread, NULL, 0, NULL);
     sn76489_reset();
-    readfile(argv[1], ROM);
+
     ResetZ80(&cpu);
 
     memset(SCREEN, 255, SMS_WIDTH * SMS_HEIGHT);

@@ -21,7 +21,7 @@ foreach(SRC_FILE IN LISTS SRC)
 endforeach()
 message(STATUS "")
 
-add_compile_options(-funroll-loops -fms-extensions -O2)
+add_compile_options(-funroll-loops -fms-extensions -O3)
 add_executable(${PROJECT_NAME} ${SRC})
 add_compile_options(-fms-extensions)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
