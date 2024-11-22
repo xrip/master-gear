@@ -69,7 +69,7 @@ void WrZ80(register word address, const register byte value) {
 
 byte RdZ80(const register word address) {
     // printf("Mem read %x\n", address);
-    if (address <= 0x400) {
+    if (address <= 1024) { // fixed 1kb
         // non pageable
         return ROM[address];
     }
@@ -86,7 +86,7 @@ byte RdZ80(const register word address) {
         return ram_rom_slot3[address];
     }
 
-    return RAM[(address - 0xC000) % 8192];
+    return RAM[(address - 0xC000) & 8191];
 }
 
 /*
@@ -251,6 +251,9 @@ static inline void sms_update() {
     const uint8_t sprite_size = 8 << sprites_mode;
     const uint8_t sprites_offset = (vdp_register[6] >> 2 & 1) * 255;
 
+    const uint8_t vscroll = vdp_register[9];
+    const uint8_t vshift = vdp_register[9] & 7;
+
     for (uint8_t scanline = 0; scanline < 192; scanline++) {
         const int hscroll = vdp_register[0] & 0x40 && scanline < 0x10  ? 0 : 0x100 - vdp_register[8];
         const int nt_scroll = (hscroll >> 3);
@@ -258,14 +261,12 @@ static inline void sms_update() {
         // const uint8_t fine_scroll_x = horizontal_disabled ? 0 : vdp_register[8] & 7; // fine_x
         uint8_t *screen_pixel = SCREEN + scanline * SMS_WIDTH + (0 - hshift);
 
-
-        const uint8_t vscroll = vdp_register[9];
-        const uint8_t vshift = vdp_register[9] & 7;
-
         const uint8_t screen_row = (vscroll + scanline) % 224 / 8;
         const uint8_t tile_row = (vshift + scanline) & 7;
 
         const uint16_t * tile_ptr = (uint16_t *)(nametable + screen_row * 64);
+
+        // background rendering loop
         for (uint8_t column = 0; column < 32; ++column) {
 
             // const uint16_t horizontal_offset = ;
@@ -314,13 +315,15 @@ static inline void sms_update() {
                 *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1) << 3;
             }
         }
-        // Iterate through all 64 sprites
+
+        // Sprites rendering loop
         for (int sprite_index = 0; sprite_index < SPRITE_COUNT; ++sprite_index) {
             const uint8_t sprite_y = sprite_table[sprite_index] + 1;
             if (scanline >= sprite_y && scanline < sprite_y + sprite_size) {
                 const uint8_t sprite_x = sprite_table[128 + sprite_index * 2];
+                // todo vdp_register(0] & 8 shift -8
                 const uint8_t tile_index = sprite_table[128 + sprite_index * 2 + 1];
-                const uint16_t sprite_pattern_offset = sprites_offset + (tile_index * 32) + (scanline - sprite_y) * 4;
+                const uint16_t sprite_pattern_offset =  sprites_offset +  (tile_index * 32) + (scanline - sprite_y) * 4;
 
                 // Extract Tile pattern
                 const uint8_t *pattern_planes = &VRAM[sprite_pattern_offset];
@@ -329,7 +332,7 @@ static inline void sms_update() {
                 const uint8_t plane2 = pattern_planes[2];
                 const uint8_t plane3 = pattern_planes[3];
 
-                uint8_t *sprite_screen_pixels = SCREEN + scanline * SMS_WIDTH + sprite_x;
+                uint8_t *sprite_screen_pixels = SCREEN + scanline * SMS_WIDTH + (sprite_x);
 
                 #pragma GCC unroll(8)
                 for (int8_t bit = 7; bit >= 0; --bit) {
