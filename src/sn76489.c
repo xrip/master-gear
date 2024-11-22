@@ -18,10 +18,11 @@
 // https://github.com/mamedev/mame/blob/master/src/devices/sound/sn76496.cpp
 // https://www.zeridajh.org/articles/me_sn76489_sound_chip_details/index.html
 #include <stdint.h>
+#include "sn76489.h"
 /*
  *The SN76489 is connected to a clock signal, which is commonly 3579545Hz for NTSC systems and 3546893Hz for PAL/SECAM systems (these are based on the associated TV colour subcarrier frequencies, and are common master clock speeds for many systems). It divides this clock by 16 to get its internal clock. The datasheets specify a maximum of 4MHz.
 */
-#define SOUND_FREQUENCY 44100
+
 #define BASE_INCREMENT (uint32_t) ((double) 3579545 * (1 << GETA_BITS) / (16 * SOUND_FREQUENCY));
 static const uint8_t parity[10] = { 0, 1, 1, 0, 1, 0, 0, 1, 1, 0 };
 static uint32_t sn_count[3];
@@ -38,11 +39,6 @@ static uint32_t noise_mode;
 static  uint32_t noise_fref;
 
 static uint32_t base_count;
-
-/* rate converter */
-static uint32_t realstep;
-static uint32_t sngtime;
-static uint32_t sngstep;
 
 static uint32_t addr;
 

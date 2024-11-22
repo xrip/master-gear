@@ -5,6 +5,7 @@
 #include <windows.h>
 #include "win32/MiniFB.h"
 #include "z80/z80.h"
+#include "sn76489.h"
 
 #define SMS_WIDTH 256
 #define SMS_HEIGHT 224
@@ -20,10 +21,6 @@ uint8_t *rom_slot2 = ROM;
 uint8_t *ram_rom_slot3 = ROM;
 
 uint8_t slot3_is_ram = 0;
-
-extern int16_t sn76489_sample();
-extern void sn76489_out(uint16_t value);
-extern void sn76489_reset();
 
 void WrZ80(register word address, const register byte value) {
     // printf("Write %04x to %04x\n", value, address);
@@ -346,7 +343,7 @@ static inline void sms_update() {
 }
 
 HANDLE updateEvent;
-#define SOUND_FREQUENCY 44100
+
 #define AUDIO_BUFFER_LENGTH ((SOUND_FREQUENCY / 10))
 static int16_t audio_buffer[AUDIO_BUFFER_LENGTH * 2] = {};
 static int sample_index = 0;
