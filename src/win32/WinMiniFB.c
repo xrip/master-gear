@@ -184,7 +184,7 @@ int mfb_open(const char *title, int width, int height, int scale) {
     s_bitmapInfo->bmiHeader.biSizeImage = 0;
     // s_bitmapInfo->bmiHeader.biXPelsPerMeter = 14173;
     // s_bitmapInfo->bmiHeader.biYPelsPerMeter = 14173;
-    s_bitmapInfo->bmiHeader.biClrUsed = 256;
+    s_bitmapInfo->bmiHeader.biClrUsed = 255;
     s_bitmapInfo->bmiHeader.biClrImportant = 1;
 
     RGBQUAD* palette = &s_bitmapInfo->bmiColors[0];
