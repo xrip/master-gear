@@ -40,7 +40,7 @@ void WrZ80(register word address, const register byte value) {
 
         if (address >= 0xFFFC) {
             // Memory paging
-            const uint8_t page = value & 0x1f;
+            const uint8_t page = value & 0x7f;
             switch (address) {
                 case 0xFFFC:
                     if (value >> 3 & 1) {
