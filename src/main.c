@@ -21,7 +21,7 @@ uint8_t *rom_slot2 = ROM;
 uint8_t *ram_rom_slot3 = ROM;
 
 uint8_t slot3_is_ram = 0;
-
+static uint8_t *key_status;
 void WrZ80(register word address, const register byte value) {
     // printf("Write %04x to %04x\n", value, address);
     if (address >= 0x8000 && address < 0xC000 && slot3_is_ram) {
@@ -209,6 +209,22 @@ byte InZ80(register word port) {
         case 0xBF: // Status Register
             vdp_latch = 0;
             return vdp_status;
+
+        case 0xC0:
+            case 0xDC:
+        uint8_t buttons = 0xff;
+
+        if (key_status[0x26]) buttons ^= 0b1;
+        if (key_status[0x28]) buttons ^= 0b10;
+        if (key_status[0x25]) buttons ^= 0b100;
+        if (key_status[0x27]) buttons ^= 0b1000;
+        if (key_status['Z']) buttons ^= 0b10000;
+        if (key_status['X']) buttons ^= 0b100000;
+        // if (key_status[0x0d]) buttons ^= 0b1000000;
+        // if (key_status[0x20]) buttons ^= 0b10000000;
+
+        return buttons;
+
     }
     return 0xff;
 }
@@ -450,6 +466,7 @@ int main(int argc, char **argv) {
 
     if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, 4))
         return 1;
+    key_status = (uint8_t *) mfb_keystatus();
 
     CreateThread(NULL, 0, SoundThread, NULL, 0, NULL);
     CreateThread(NULL, 0, TicksThread, NULL, 0, NULL);
