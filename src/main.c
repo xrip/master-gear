@@ -490,7 +490,7 @@ int main(int argc, char **argv) {
         vdp_status |= 0x80;
         // vdp_status |= 0x40;
         IntZ80(&cpu, INT_IRQ);
-
+        ExecZ80(&cpu, 272*(224-192)); // vblank period
         if (mfb_update(SCREEN, 60) == -1)
             exit(1);
     }
