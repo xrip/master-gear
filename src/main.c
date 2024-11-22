@@ -21,6 +21,9 @@ uint8_t *ram_rom_slot3 = ROM;
 
 uint8_t slot3_is_ram = 0;
 
+extern int16_t sn76489_sample();
+extern void sn76489_out(uint16_t value);
+extern void sn76489_reset();
 
 void WrZ80(register word address, const register byte value) {
     // printf("Write %04x to %04x\n", value, address);
@@ -134,8 +137,8 @@ uint8_t vdp_read_byte() {
 void OutZ80(register word port, register byte value) {
     // printf("Z80 out port %02x value %02x\n", port & 0xff, value);
     switch (port & 0xff) {
-        case 0x7E: break; // SN76489
-        case 0x7F: break; // SN76489
+        case 0x7E: sn76489_out(value); break; // SN76489
+        case 0x7F: sn76489_out(value); break; // SN76489
 
         case 0xBE: // Data register
             vdp_latch = 0;
@@ -253,8 +256,8 @@ static inline void sms_update() {
 
     for (uint8_t scanline = 0; scanline < 192; scanline++) {
         const int hscroll = vdp_register[0] & 0x40 && scanline < 0x10  ? 0 : 0x100 - vdp_register[8];
-        int nt_scroll = (hscroll >> 3);
-        int shift = (hscroll & 7);
+        const int nt_scroll = (hscroll >> 3);
+        const int shift = (hscroll & 7);
         // const uint8_t fine_scroll_x = horizontal_disabled ? 0 : vdp_register[8] & 7; // fine_x
         uint8_t *screen_pixel = SCREEN + scanline * SMS_WIDTH + (0 - shift);
 
@@ -342,6 +345,100 @@ static inline void sms_update() {
     }
 }
 
+HANDLE updateEvent;
+#define SOUND_FREQUENCY 44100
+#define AUDIO_BUFFER_LENGTH ((SOUND_FREQUENCY / 10))
+static int16_t audio_buffer[AUDIO_BUFFER_LENGTH * 2] = {};
+static int sample_index = 0;
+
+DWORD WINAPI SoundThread(LPVOID lpParam) {
+    WAVEHDR waveHeaders[4];
+
+    WAVEFORMATEX format = {0};
+    format.wFormatTag = WAVE_FORMAT_PCM;
+    format.nChannels = 2;
+    format.nSamplesPerSec = SOUND_FREQUENCY;
+    format.wBitsPerSample = 16;
+    format.nBlockAlign = format.nChannels * format.wBitsPerSample / 8;
+    format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
+
+    HANDLE waveEvent = CreateEvent(NULL, 1, 0, NULL);
+
+    HWAVEOUT hWaveOut;
+    waveOutOpen(&hWaveOut, WAVE_MAPPER, &format, (DWORD_PTR) waveEvent, 0, CALLBACK_EVENT);
+
+    for (size_t i = 0; i < 4; i++) {
+        int16_t audio_buffers[4][AUDIO_BUFFER_LENGTH * 2];
+        waveHeaders[i] = (WAVEHDR){
+            .lpData = (char *) audio_buffers[i],
+            .dwBufferLength = AUDIO_BUFFER_LENGTH * 2,
+        };
+        waveOutPrepareHeader(hWaveOut, &waveHeaders[i], sizeof(WAVEHDR));
+        waveHeaders[i].dwFlags |= WHDR_DONE;
+    }
+    WAVEHDR *currentHeader = waveHeaders;
+
+
+    while (1) {
+        if (WaitForSingleObject(waveEvent, INFINITE)) {
+            //            fprintf(stderr, "Failed to wait for event.\n");
+            return 1;
+        }
+
+        if (!ResetEvent(waveEvent)) {
+            //            fprintf(stderr, "Failed to reset event.\n");
+            return 1;
+        }
+
+        // Wait until audio finishes playing
+        while (currentHeader->dwFlags & WHDR_DONE) {
+            WaitForSingleObject(updateEvent, INFINITE);
+            ResetEvent(updateEvent);
+            //            PSG_calc_stereo(&psg, audiobuffer, AUDIO_BUFFER_LENGTH);
+            memcpy(currentHeader->lpData, audio_buffer, AUDIO_BUFFER_LENGTH * 2);
+            waveOutWrite(hWaveOut, currentHeader, sizeof(WAVEHDR));
+            //waveOutPrepareHeader(hWaveOut, currentHeader, sizeof(WAVEHDR));
+            currentHeader++;
+            if (currentHeader == waveHeaders + 4) { currentHeader = waveHeaders; }
+        }
+    }
+    return 0;
+}
+
+DWORD WINAPI TicksThread(LPVOID lpParam) {
+    LARGE_INTEGER start, current, queryperf;
+
+
+    QueryPerformanceFrequency(&queryperf);
+    uint32_t hostfreq = (uint32_t) queryperf.QuadPart;
+
+    QueryPerformanceCounter(&start); // Get the starting time
+    uint32_t last_sound_tick = 0;
+
+
+
+    updateEvent = CreateEvent(NULL, 1, 1, NULL);
+    while (1) {
+        QueryPerformanceCounter(&current); // Get the current time
+
+        // Calculate elapsed time in ticks since the start
+        uint32_t elapsedTime = (uint32_t) (current.QuadPart - start.QuadPart);
+
+        if (elapsedTime - last_sound_tick >= hostfreq / SOUND_FREQUENCY) {
+            const int16_t sample = sn76489_sample();
+            audio_buffer[sample_index++] = sample;
+            audio_buffer[sample_index++] = sample;
+
+            if (sample_index >= AUDIO_BUFFER_LENGTH) {
+                SetEvent(updateEvent);
+                sample_index = 0;
+            }
+
+            last_sound_tick = elapsedTime;
+        }
+    }
+}
+
 int main(int argc, char **argv) {
     if (!argv[1]) {
         printf("Usage: gamate.exe <rom.bin> [scale_factor] [ghosting_level]\n");
@@ -351,7 +448,9 @@ int main(int argc, char **argv) {
     if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, 4))
         return 1;
 
-
+    CreateThread(NULL, 0, SoundThread, NULL, 0, NULL);
+    CreateThread(NULL, 0, TicksThread, NULL, 0, NULL);
+    sn76489_reset();
     readfile(argv[1], ROM);
     ResetZ80(&cpu);
 
