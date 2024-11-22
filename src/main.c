@@ -10,7 +10,7 @@
 #define SMS_WIDTH 256
 #define SMS_HEIGHT 224
 
-uint8_t SCREEN[SMS_WIDTH * SMS_HEIGHT] = {0};
+uint8_t SCREEN[SMS_WIDTH * SMS_HEIGHT + 8] = {0};  // +8 possible sprite overflow
 
 uint8_t RAM[8192] = {0};
 uint8_t ROM[1024 << 10] = {0};
@@ -249,20 +249,23 @@ static inline void sms_update() {
 
     const uint8_t sprites_mode = vdp_register[1] >> 1 & 1;
     const uint8_t sprite_size = 8 << sprites_mode;
-    const uint8_t sprites_offset = (vdp_register[6] >> 2 & 1) * 256;
+    const uint8_t sprites_offset = (vdp_register[6] >> 2 & 1) * 255;
 
     for (uint8_t scanline = 0; scanline < 192; scanline++) {
         const int hscroll = vdp_register[0] & 0x40 && scanline < 0x10  ? 0 : 0x100 - vdp_register[8];
         const int nt_scroll = (hscroll >> 3);
-        const int shift = (hscroll & 7);
+        const int hshift = (hscroll & 7);
         // const uint8_t fine_scroll_x = horizontal_disabled ? 0 : vdp_register[8] & 7; // fine_x
-        uint8_t *screen_pixel = SCREEN + scanline * SMS_WIDTH + (0 - shift);
+        uint8_t *screen_pixel = SCREEN + scanline * SMS_WIDTH + (0 - hshift);
 
 
-        const uint8_t screen_row = scanline / 8;
-        const uint8_t tile_row = scanline & 7;
+        const uint8_t vscroll = vdp_register[9];
+        const uint8_t vshift = vdp_register[9] & 7;
 
-        const uint16_t * tile_ptr = (uint16_t *)((nametable + screen_row * 64) );
+        const uint8_t screen_row = (vscroll + scanline) % 224 / 8;
+        const uint8_t tile_row = (vshift + scanline) & 7;
+
+        const uint16_t * tile_ptr = (uint16_t *)(nametable + screen_row * 64);
         for (uint8_t column = 0; column < 32; ++column) {
 
             // const uint16_t horizontal_offset = ;
