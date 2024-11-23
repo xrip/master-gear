@@ -27,6 +27,7 @@ uint8_t slot3_is_ram = 0;
 static uint8_t *key_status;
 
 uint8_t is_gamegear = 0;
+uint8_t page_mask = 0x1f;
 
 void WrZ80(register word address, const register byte value) {
     // printf("Write %04x to %04x\n", value, address);
@@ -40,7 +41,7 @@ void WrZ80(register word address, const register byte value) {
 
         if (address >= 0xFFFC) {
             // Memory paging
-            const uint8_t page = value & 0x7f;
+            const uint8_t page = value & page_mask; // todo check rom size
             switch (address) {
                 case 0xFFFC:
                     if (value >> 3 & 1) {
@@ -63,10 +64,11 @@ void WrZ80(register word address, const register byte value) {
                         ram_rom_slot3 = RAM_BANK[slot3_is_ram - 1];
                         printf("slot 3 is RAM bank %i\n", slot3_is_ram - 1);
                     } else {
-                        // printf("slot 3 is ROM page %i\n", page);
+                        printf("slot 3 is ROM page %i\n", page);
                         ram_rom_slot3 = ROM + page * 0x4000;
+                        ram_rom_slot3 -= 0x8000;
                     }
-                    ram_rom_slot3 -= 0x8000;
+
                     break;
             }
         }
@@ -282,7 +284,8 @@ static inline size_t readfile(const char *pathname, uint8_t *dst) {
     FILE *file = fopen(pathname, "rb");
     fseek(file, 0, SEEK_END);
     const size_t rom_size = ftell(file);
-    if (rom_size == 0) {
+    if (rom_size == 1048576) {
+        page_mask = 0x7f;
     }
     fseek(file, 0, SEEK_SET);
 
@@ -454,7 +457,10 @@ int main(const int argc, char **argv) {
     CreateThread(NULL, 0, TicksThread, NULL, 0, NULL);
     sn76489_reset();
 
+    memset(RAM, 0, sizeof(RAM));
+    memset(VRAM, 0, sizeof(VRAM));
     ResetZ80(&cpu);
+
 
     memset(SCREEN, 255, SMS_WIDTH * SMS_HEIGHT);
 
