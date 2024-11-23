@@ -64,7 +64,7 @@ void WrZ80(register word address, const register byte value) {
                         ram_rom_slot3 = RAM_BANK[slot3_is_ram - 1];
                         printf("slot 3 is RAM bank %i\n", slot3_is_ram - 1);
                     } else {
-                        printf("slot 3 is ROM page %i\n", page);
+                        // printf("slot 3 is ROM page %i\n", page);
                         ram_rom_slot3 = ROM + page * 0x4000;
                         ram_rom_slot3 -= 0x8000;
                     }
