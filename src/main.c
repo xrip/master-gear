@@ -284,9 +284,7 @@ static inline size_t readfile(const char *pathname, uint8_t *dst) {
     FILE *file = fopen(pathname, "rb");
     fseek(file, 0, SEEK_END);
     const size_t rom_size = ftell(file);
-    if (rom_size == 1048576) {
-        page_mask = 0x7f;
-    }
+
     fseek(file, 0, SEEK_SET);
 
     fread(dst, sizeof(uint8_t), rom_size, file);
@@ -443,8 +441,10 @@ int main(const int argc, char **argv) {
     }
 
     const char *filename = argv[1];
-    size_t len = strlen(filename);
-    readfile(filename, ROM);
+    const size_t len = strlen(filename);
+    if (readfile(filename, ROM) == 1048576) {
+        page_mask = 0x7f;
+    }
     if (len >= 2 && strcmp(&filename[len - 2], "gg") == 0) {
         is_gamegear = 1;
     }
