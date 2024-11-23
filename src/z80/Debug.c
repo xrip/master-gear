@@ -11,7 +11,6 @@
 /**     commercially. Please, notify me, if you make any    **/
 /**     changes to this file.                               **/
 /*************************************************************/
-#define DEBUG
 #ifdef DEBUG
 
 #include "Z80.h"
