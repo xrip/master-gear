@@ -4,9 +4,10 @@
 #include <stdio.h>
 #include <windows.h>
 #include "win32/MiniFB.h"
-#include "win32/audio.h"
 #include "z80/z80.h"
 #include "sn76489.h"
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio/miniaudio.h"
 
 #include "sms.h"
 // create a CPU core object
@@ -428,7 +429,19 @@ static inline void sms_frame() {
     vdp_status |= 0x80;
 }
 
+#define SAMPLE_RATE 44100
+#define CHANNELS 1
+// MiniAudio callback for playback
+void dataCallback(ma_device* device, void* output, const void* input, ma_uint32 frameCount) {
+    (void)input; // Unused
 
+    int16_t* outputBuffer = (int16_t*)output;
+
+    printf("frameCount: %u\n", frameCount);
+    for (ma_uint32 i = 0; i < frameCount; i++) {
+        outputBuffer[i] = sn76489_sample();
+    }
+}
 int main(const int argc, char **argv) {
     int scale = 4;
     if (!argv[1]) {
@@ -450,9 +463,28 @@ int main(const int argc, char **argv) {
         return 1;
     key_status = (uint8_t *) mfb_keystatus();
 
-    CreateThread(NULL, 0, SoundThread, NULL, 0, NULL);
-    CreateThread(NULL, 0, TicksThread, NULL, 0, NULL);
+    // Initialize the playback device
+    ma_device_config config = ma_device_config_init(ma_device_type_playback);
+    config.playback.format   = ma_format_s16;    // 16-bit samples
+    config.playback.channels = CHANNELS;        // Mono audio
+    config.sampleRate        = SAMPLE_RATE;     // 44.1 kHz sample rate
+    config.dataCallback      = dataCallback;    // Function to provide audio data
+    config.pUserData         = NULL;            // Optional user data
+
     sn76489_reset();
+
+    ma_device device;
+    if (ma_device_init(NULL, &config, &device) != MA_SUCCESS) {
+        printf("Failed to initialize playback device.\n");
+        return -1;
+    }
+
+    // Start playback
+    if (ma_device_start(&device) != MA_SUCCESS) {
+        printf("Failed to start playback device.\n");
+        ma_device_uninit(&device);
+        return -1;
+    }
 
     ResetZ80(&cpu);
 
@@ -481,6 +513,8 @@ int main(const int argc, char **argv) {
 
 
         if (mfb_update(SCREEN, 60) == -1)
-            exit(1);
+            break;
     }
+    // Cleanup
+    ma_device_uninit(&device);
 }
