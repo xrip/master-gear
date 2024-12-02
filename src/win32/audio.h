@@ -3,7 +3,6 @@
 #include <stdint.h>
 
 #include "../sn76489.h"
-// #include "../ym2413.h"
 HANDLE updateEvent;
 
 #define AUDIO_BUFFER_LENGTH ((SOUND_FREQUENCY / 10))
@@ -84,12 +83,6 @@ DWORD WINAPI TicksThread(LPVOID lpParam) {
 
         if (elapsedTime - last_sound_tick >= hostfreq / SOUND_FREQUENCY) {
             const int16_t sample =  sn76489_sample();
-            /*
-            int16_t *lr[2];
-            lr[0] =  &audio_buffer[sample_index];
-            lr[1] =  &audio_buffer[sample_index + 1];
-            YM2413UpdateOne(0, lr, 1);
-            */
 
             audio_buffer[sample_index++] = sample;
             audio_buffer[sample_index++] = sample;
