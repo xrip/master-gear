@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
+#SET(CMAKE_SYSTEM_NAME Linux)
+
+# Define the cross-compiler
+#SET(CMAKE_C_COMPILER x86_64-linux-musl-gcc)
+#SET(CMAKE_CXX_COMPILER x86_64-linux-musl-g++)
 
 project(master-gear C CXX ASM)
 enable_language(CXX)

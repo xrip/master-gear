@@ -12,7 +12,6 @@
 // create a CPU core object
 Z80 cpu;
 
-
 uint8_t SCREEN[SMS_WIDTH * SMS_HEIGHT + 8] = {0}; // +8 possible sprite overflow
 
 uint8_t RAM[8192] = {0};
@@ -111,7 +110,7 @@ uint8_t VRAM[VRAM_SIZE];
 uint8_t CRAM[64]; // 32?
 
 
-uint16_t h_counter, v_counter;
+uint16_t h_counter, scanline;
 /*
 BIT 7 = VSync Interrupt Pending
 BIT 6 = Sprite Overflow
@@ -143,6 +142,14 @@ uint8_t vdp_read_byte() {
 void OutZ80(register word port, register byte value) {
     // printf("Z80 out port %02x value %02x\n", port & 0xff, value);
     switch (port & 0xff) {
+        case 0x3E:
+            if (value & BIT_3) {
+                rom_slot2 = ROM + 0x4000;
+            }
+            if (value & BIT_2) {
+                printf("IO enabled\n");
+            }
+            break;
         case 0x7E: sn76489_out(value);
             break; // SN76489
         case 0x7F: sn76489_out(value);
@@ -222,7 +229,7 @@ void OutZ80(register word port, register byte value) {
 }
 
 byte InZ80(register word port) {
-    // printf("Z80 in %02x\n", port & 0xff);
+        // printf("Z80 in %02x\n", port & 0xff);
 
     switch (port & 0xff) {
         // gg input
@@ -233,11 +240,11 @@ byte InZ80(register word port) {
 
             return buttons;
         }
-        case 0x7E: return vcnt[v_counter];
+        case 0x7E: return vcnt[scanline];
         case 0x7F: {
             printf("HCOUNTER read\n");
-            int pixel = (((cpu.ICount % CYCLES_PER_LINE) / 4) * 3) * 2;
-            return (hcnt[((pixel >> 1) & 0x1FF)]);
+            const int pixel = cpu.ICount % CYCLES_PER_LINE / 4 * 3 * 2;
+            return hcnt[(pixel >> 1 & 0x1FF)];
         }
         case 0xBE: // Data register
             vdp_latch = 0;
@@ -246,7 +253,7 @@ byte InZ80(register word port) {
             vdp_increment_address();
             return result; // returns buffer and fill it with next value at same time
         case 0xBF: // Status Register
-            uint8_t temp_status = vdp_status;
+            const uint8_t temp_status = vdp_status;
             vdp_latch = 0;
 
         /* Clear pending interrupt and sprite collision flags */
@@ -293,7 +300,6 @@ static inline size_t readfile(const char *pathname, uint8_t *dst) {
 }
 
 #define SPRITE_COUNT 64
-#define SPRITE_HEIGHT 8
 
 // Sega Master System Frame update cycle
 static inline void sms_frame() {
@@ -306,15 +312,14 @@ static inline void sms_frame() {
 
 
     const uint8_t vscroll = vdp_register[9];
-    const uint8_t vshift = vdp_register[9] & 7;
 
-    for (uint8_t scanline = 0; scanline < 192; scanline++) {
+    for (scanline = 0; scanline < 192; scanline++) {
         uint8_t priority_table[SMS_WIDTH + 8]; // allow 8 pixels overrun
         uint8_t *priority_table_ptr = priority_table + 8;
 
         const int hscroll = vdp_register[0] & 0x40 && scanline < 0x10 ? 0 : 0x100 - vdp_register[8];
-        const int nt_scroll = (hscroll >> 3);
-        const int hshift = (hscroll & 7);
+        const int nametable_scroll = hscroll >> 3;
+        const int hshift = hscroll & 7;
 
         uint8_t *screen_pixel = SCREEN + scanline * SMS_WIDTH + (0 - hshift);
 
@@ -326,7 +331,7 @@ static inline void sms_frame() {
 
         // background rendering loop
         for (uint8_t column = 0; column < 32; ++column) {
-            const uint16_t tile_info = tile_ptr[(column + nt_scroll) & 0x1f];
+            const uint16_t tile_info = tile_ptr[(column + nametable_scroll) & 0x1f];
             const uint8_t priority = tile_info >> 12 & 1;
 
             const uint8_t palette_offset = (tile_info >> 11 & 1) * 16; // palette select
@@ -341,39 +346,23 @@ static inline void sms_frame() {
 
             if (tile_info >> 9 & 1) {
                 // horizontal flip
-                *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1)
-                                  << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 1 & 1) | (plane1 >> 1 & 1) << 1 | (plane2 >> 1 & 1) << 2 |
-                                  (plane3 >> 1 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 2 & 1) | (plane1 >> 2 & 1) << 1 | (plane2 >> 2 & 1) << 2 |
-                                  (plane3 >> 2 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 3 & 1) | (plane1 >> 3 & 1) << 1 | (plane2 >> 3 & 1) << 2 |
-                                  (plane3 >> 3 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 4 & 1) | (plane1 >> 4 & 1) << 1 | (plane2 >> 4 & 1) << 2 |
-                                  (plane3 >> 4 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 5 & 1) | (plane1 >> 5 & 1) << 1 | (plane2 >> 5 & 1) << 2 |
-                                  (plane3 >> 5 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 6 & 1) | (plane1 >> 6 & 1) << 1 | (plane2 >> 6 & 1) << 2 |
-                                  (plane3 >> 6 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 7 & 1) | (plane1 >> 7 & 1) << 1 | (plane2 >> 7 & 1) << 2 |
-                                  (plane3 >> 7 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 1 & 1) | (plane1 >> 1 & 1) << 1 | (plane2 >> 1 & 1) << 2 | (plane3 >> 1 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 2 & 1) | (plane1 >> 2 & 1) << 1 | (plane2 >> 2 & 1) << 2 | (plane3 >> 2 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 3 & 1) | (plane1 >> 3 & 1) << 1 | (plane2 >> 3 & 1) << 2 | (plane3 >> 3 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 4 & 1) | (plane1 >> 4 & 1) << 1 | (plane2 >> 4 & 1) << 2 | (plane3 >> 4 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 5 & 1) | (plane1 >> 5 & 1) << 1 | (plane2 >> 5 & 1) << 2 | (plane3 >> 5 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 6 & 1) | (plane1 >> 6 & 1) << 1 | (plane2 >> 6 & 1) << 2 | (plane3 >> 6 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 7 & 1) | (plane1 >> 7 & 1) << 1 | (plane2 >> 7 & 1) << 2 | (plane3 >> 7 & 1) << 3;
             } else {
-                *screen_pixel++ = palette_offset + (plane0 >> 7 & 1) | (plane1 >> 7 & 1) << 1 | (plane2 >> 7 & 1) << 2 |
-                                  (plane3 >> 7 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 6 & 1) | (plane1 >> 6 & 1) << 1 | (plane2 >> 6 & 1) << 2 |
-                                  (plane3 >> 6 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 5 & 1) | (plane1 >> 5 & 1) << 1 | (plane2 >> 5 & 1) << 2 |
-                                  (plane3 >> 5 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 4 & 1) | (plane1 >> 4 & 1) << 1 | (plane2 >> 4 & 1) << 2 |
-                                  (plane3 >> 4 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 3 & 1) | (plane1 >> 3 & 1) << 1 | (plane2 >> 3 & 1) << 2 |
-                                  (plane3 >> 3 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 2 & 1) | (plane1 >> 2 & 1) << 1 | (plane2 >> 2 & 1) << 2 |
-                                  (plane3 >> 2 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 >> 1 & 1) | (plane1 >> 1 & 1) << 1 | (plane2 >> 1 & 1) << 2 |
-                                  (plane3 >> 1 & 1) << 3;
-                *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1)
-                                  << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 7 & 1) | (plane1 >> 7 & 1) << 1 | (plane2 >> 7 & 1) << 2 | (plane3 >> 7 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 6 & 1) | (plane1 >> 6 & 1) << 1 | (plane2 >> 6 & 1) << 2 | (plane3 >> 6 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 5 & 1) | (plane1 >> 5 & 1) << 1 | (plane2 >> 5 & 1) << 2 | (plane3 >> 5 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 4 & 1) | (plane1 >> 4 & 1) << 1 | (plane2 >> 4 & 1) << 2 | (plane3 >> 4 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 3 & 1) | (plane1 >> 3 & 1) << 1 | (plane2 >> 3 & 1) << 2 | (plane3 >> 3 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 2 & 1) | (plane1 >> 2 & 1) << 1 | (plane2 >> 2 & 1) << 2 | (plane3 >> 2 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 >> 1 & 1) | (plane1 >> 1 & 1) << 1 | (plane2 >> 1 & 1) << 2 | (plane3 >> 1 & 1) << 3;
+                *screen_pixel++ = palette_offset + (plane0 & 1) | (plane1 & 1) << 1 | (plane2 & 1) << 2 | (plane3 & 1) << 3;
             }
 
             // if background priority
@@ -383,7 +372,6 @@ static inline void sms_frame() {
                 screen_pixel++;
             }
         }
-
         // Sprites rendering loop
         for (int sprite_index = 0; sprite_index < SPRITE_COUNT; ++sprite_index) {
             const uint8_t sprite_y = sprite_table[sprite_index] + 1;
@@ -392,7 +380,7 @@ static inline void sms_frame() {
                 const int8_t sprite_x_offset = vdp_register[0] >> 3 & 1 ? -8 : 0;
 
                 const uint16_t tile_index = sprites_offset + sprite_table[128 + sprite_index * 2 + 1];
-                const uint16_t sprite_pattern_offset = (tile_index * 32) + (scanline - sprite_y) * 4;
+                const uint16_t sprite_pattern_offset = tile_index * 32 + (scanline - sprite_y) * 4;
 
 
                 // Extract Tile pattern
@@ -404,20 +392,19 @@ static inline void sms_frame() {
 
                 uint8_t *sprite_screen_pixels = SCREEN + scanline * SMS_WIDTH + (sprite_x + sprite_x_offset);
                 priority_table_ptr = priority_table + sprite_x + sprite_x_offset;
-#pragma GCC unroll(8)
+
+                #pragma GCC unroll(8)
                 for (int8_t bit = 7; bit >= 0; --bit) {
                     if (*priority_table_ptr++) continue;
 
-                    const uint8_t color = (plane0 >> bit & 1) | (plane1 >> bit & 1) << 1 | (plane2 >> bit & 1) << 2 | (
-                                              plane3 >> bit & 1) << 3;
+                    const uint8_t color = plane0 >> bit & 1 | (plane1 >> bit & 1) << 1 | (plane2 >> bit & 1) << 2 | (plane3 >> bit & 1) << 3;
+
                     if (color) {
                         sprite_screen_pixels[7 - bit] = 16 + color;
                     }
                 }
             }
         }
-
-        v_counter++;
 
         if (scanline == vdp_register[10] && vdp_register[0] & 0x10) {
             vdp_status |= 0x40;
@@ -431,14 +418,13 @@ static inline void sms_frame() {
 
 
 int main(const int argc, char **argv) {
-    int scale = 4;
+    const int scale = argc > 2 ? atoi(argv[1]) : 4;
+
     if (!argv[1]) {
         printf("Usage: master-gear.exe <rom.bin> [scale_factor]\n");
-        exit(-1);
+        return EXIT_FAILURE;
     }
-    if (argc > 2) {
-        scale = atoi(argv[2]);
-    }
+
 
     const char *filename = argv[1];
     const size_t len = strlen(filename);
@@ -450,7 +436,8 @@ int main(const int argc, char **argv) {
     }
 
     if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, scale))
-        return 1;
+        return EXIT_FAILURE;
+
     key_status = (uint8_t *) mfb_keystatus();
 
     CreateThread(NULL, 0, SoundThread, NULL, 0, NULL);
@@ -471,22 +458,19 @@ int main(const int argc, char **argv) {
         }
     }
 
-    while (1) {
-        // vdp_status = 0;
-        v_counter = 0;
+    do {
+        scanline = 0;
 
         sms_frame(); // 192 scanlines
 
         // vblank period
-        while (v_counter++ < 262) {
-            if (v_counter < 224 && vdp_status & 0x80 && vdp_register[1] & 0x20) {
+        while (scanline++ < 262) {
+            if (scanline < 224 && vdp_status & 0x80 && vdp_register[1] & 0x20) {
                 IntZ80(&cpu, INT_IRQ);
             }
             ExecZ80(&cpu, CYCLES_PER_LINE);
         }
+    } while (mfb_update(SCREEN, 60) != -1);
 
-
-        if (mfb_update(SCREEN, 60) == -1)
-            exit(1);
-    }
+    return EXIT_FAILURE;
 }

@@ -7,6 +7,18 @@
 #define SMS_WIDTH 256
 #define SMS_HEIGHT 224
 
+enum {
+    BIT_7 = 1 << 7,
+    BIT_6 = 1 << 6,
+    BIT_5 = 1 << 5,
+    BIT_4 = 1 << 4,
+    BIT_3 = 1 << 3,
+    BIT_2 = 1 << 2,
+    BIT_1 = 1 << 1,
+    BIT_0 = 1
+};
+
+
 /* Return values from the V counter */
 const uint8_t vcnt[0x200] =
 {
