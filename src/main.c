@@ -212,12 +212,13 @@ static inline void sms_frame() {
 
     for (scanline = 0; scanline < 192; scanline++) {
         uint8_t priority_table[SMS_WIDTH + 8]; // allow 8 pixels overrun
-        uint8_t *priority_table_ptr = priority_table + 8;
 
         const int hscroll = hscroll_lock && scanline < 16 ? 0 : vdp.registers[R8_BACKGROUND_X_SCROLL];
+        const uint8_t hscroll_fine = hscroll & 7 ;
+        uint8_t *priority_table_ptr = priority_table + hscroll_fine;
         const int nametable_scroll = 32 - (hscroll >> 3);
 
-        uint8_t *screen_pixel = &SCREEN[scanline * SMS_WIDTH + (hscroll & 7)];
+        uint8_t *screen_pixel = &SCREEN[scanline * SMS_WIDTH + hscroll_fine];
 
         const uint16_t scanline_offset = (vscroll + scanline) % 224;
         const uint8_t screen_row = scanline_offset / 8;
@@ -284,8 +285,8 @@ static inline void sms_frame() {
                 const uint8_t plane2 = pattern_planes[2];
                 const uint8_t plane3 = pattern_planes[3];
 
-                uint8_t *sprite_screen_pixels = SCREEN + scanline * SMS_WIDTH + (sprite_x + sprites_hshift);
-                priority_table_ptr = priority_table + sprite_x + sprites_hshift;
+                uint8_t *sprite_screen_pixels = SCREEN + scanline * SMS_WIDTH + (sprite_x - sprites_hshift);
+                priority_table_ptr = priority_table + sprite_x - sprites_hshift;
 
 #pragma GCC unroll(8)
                 for (int8_t bit = 7; bit >= 0; --bit) {
@@ -305,22 +306,25 @@ static inline void sms_frame() {
             IntZ80(&cpu, INT_IRQ);
             interrut_line = scanline + vdp.registers[R10_LINE_COUNTER];
         }
-        cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE + cpu_cycles);
+        cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
     }
     vdp.status |= VDP_VSYNC_PENDING;
+
+    cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
+    scanline++;
 
     // vblank period
     while (scanline++ < 262) {
         if (vdp.status & VDP_VSYNC_PENDING && vdp.registers[R1_MODE_CONTROL_2] & ENABLE_FRAME_INTERRUPT) {
             IntZ80(&cpu, INT_IRQ);
         }
-        cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE + cpu_cycles);
+        cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
     }
 }
 
 
 int main(const int argc, char **argv) {
-    const int scale = argc > 2 ? atoi(argv[1]) : 1;
+    const int scale = argc > 2 ? atoi(argv[1]) : 4;
 
     if (!argv[1]) {
         printf("Usage: master-gear.exe <rom.bin> [scale_factor]\n");
