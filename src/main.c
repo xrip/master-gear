@@ -293,17 +293,23 @@ static inline void sms_frame() {
             IntZ80(&cpu, INT_IRQ);
             interrut_line = scanline + vdp.registers[R10_LINE_COUNTER];
         }
-
         cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE + cpu_cycles);
 
     }
-
     vdp.status |= VDP_VSYNC_PENDING;
+
+    // vblank period
+    while (scanline++ < 262) {
+        if (vdp.status & VDP_VSYNC_PENDING && vdp.registers[R1_MODE_CONTROL_2] & ENABLE_FRAME_INTERRUPT) {
+            IntZ80(&cpu, INT_IRQ);
+        }
+        cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE + cpu_cycles);
+    }
 }
 
 
 int main(const int argc, char **argv) {
-    const int scale = argc > 2 ? atoi(argv[1]) : 4;
+    const int scale = argc > 2 ? atoi(argv[1]) : 1;
 
     if (!argv[1]) {
         printf("Usage: master-gear.exe <rom.bin> [scale_factor]\n");
@@ -345,14 +351,6 @@ int main(const int argc, char **argv) {
 
     do {
         sms_frame(); // 192 scanlines
-
-        // vblank period
-        while (scanline++ < 262) {
-            if (scanline < 224 && vdp.status & VDP_VSYNC_PENDING && vdp.registers[R1_MODE_CONTROL_2] & ENABLE_FRAME_INTERRUPT) {
-                IntZ80(&cpu, INT_IRQ);
-            }
-            ExecZ80(&cpu, CYCLES_PER_LINE);
-        }
     } while (mfb_update(SCREEN, 60) != -1);
 
     return EXIT_FAILURE;
