@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 #include <windows.h>
+
+#include "emu2413.h"
 #include "win32/MiniFB.h"
 #include "win32/audio.h"
 #include "z80/z80.h"
@@ -12,6 +14,8 @@
 #include "vdp.h"
 // create a CPU core object
 Z80 cpu;
+OPLL *ym2413;
+uint8_t ym2413_status;
 
 uint8_t SCREEN[SMS_WIDTH * SMS_HEIGHT + 8] = {0}; // +8 possible sprite overflow
 
@@ -62,11 +66,11 @@ void WrZ80(register word address, const register byte value) {
                     break;
                 case 0xFFFF:
                     if (slot3_is_ram) {
-                        ram_rom_slot3 = &RAM_BANK[slot3_is_ram-2][0];
-                        printf("slot 3 is RAM bank %i\n", slot3_is_ram-2);
+                        ram_rom_slot3 = &RAM_BANK[slot3_is_ram - 2][0];
+                        printf("slot 3 is RAM bank %i\n", slot3_is_ram - 2);
                         // ram_rom_slot3 -= 0x8000;
                     } else {
-                         // printf("slot 3 is ROM page %i\n", page);
+                        // printf("slot 3 is ROM page %i\n", page);
                         ram_rom_slot3 = ROM + page * 0x4000;
                         ram_rom_slot3 -= 0x8000;
                     }
@@ -120,6 +124,13 @@ void OutZ80(register word port, register byte value) {
         case 0xBF: // Control register
             vdp_write(port, value);
             break;
+
+        case 0xF0:
+        case 0xF1:
+            OPLL_writeIO(ym2413, port, value);
+            break;
+        case 0xF2: ym2413_status = value & 3;
+            break;
     }
 }
 
@@ -158,6 +169,7 @@ byte InZ80(register word port) {
 
             return buttons;
         }
+        case 0xF2: return ym2413_status;
     }
     return 0xff;
 }
@@ -211,7 +223,7 @@ static inline void sms_frame() {
         const uint8_t screen_row = scanline_offset / 8;
         const uint8_t tile_row = scanline_offset & 7;
 
-        const uint16_t *tile_ptr = (uint16_t *)&vdp.nametable[screen_row * 64];
+        const uint16_t *tile_ptr = (uint16_t *) &vdp.nametable[screen_row * 64];
 
         // background rendering loop
         for (uint8_t column = 0; column < 32; ++column) {
@@ -294,7 +306,6 @@ static inline void sms_frame() {
             interrut_line = scanline + vdp.registers[R10_LINE_COUNTER];
         }
         cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE + cpu_cycles);
-
     }
     vdp.status |= VDP_VSYNC_PENDING;
 
@@ -331,9 +342,13 @@ int main(const int argc, char **argv) {
 
     key_status = (uint8_t *) mfb_keystatus();
 
+    ym2413 = OPLL_new(3579545, SOUND_FREQUENCY);
+    OPLL_reset(ym2413);
+    sn76489_reset();
+
     CreateThread(NULL, 0, SoundThread, NULL, 0, NULL);
     CreateThread(NULL, 0, TicksThread, NULL, 0, NULL);
-    sn76489_reset();
+
 
     memset(RAM, 0, sizeof(RAM));
     memset(VRAM, 0, sizeof(VRAM));

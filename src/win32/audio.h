@@ -4,6 +4,7 @@
 
 #include "../sn76489.h"
 HANDLE updateEvent;
+extern OPLL *ym2413;
 
 #define AUDIO_BUFFER_LENGTH ((SOUND_FREQUENCY / 10))
 static int16_t audio_buffer[AUDIO_BUFFER_LENGTH * 2] = { 0 };
@@ -82,7 +83,7 @@ DWORD WINAPI TicksThread(LPVOID lpParam) {
         uint32_t elapsedTime = (uint32_t) (current.QuadPart - start.QuadPart);
 
         if (elapsedTime - last_sound_tick >= hostfreq / SOUND_FREQUENCY) {
-            const int16_t sample =  sn76489_sample();
+            const int16_t sample =  sn76489_sample() + OPLL_calc(ym2413);
 
             audio_buffer[sample_index++] = sample;
             audio_buffer[sample_index++] = sample;
