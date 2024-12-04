@@ -441,7 +441,7 @@ int main(const int argc, char **argv) {
         if (strcmp(&filename[len - 2], "sg") == 0) is_sg1000 = 1;
     }
 
-    if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, scale))
+    if (!mfb_open(is_sg1000 ? "SG-1000" : is_gamegear ? "Sega Gamegear" : "Sega Master System", SMS_WIDTH, SMS_HEIGHT, scale))
         return EXIT_FAILURE;
 
     key_status = (uint8_t *) mfb_keystatus();
@@ -494,7 +494,7 @@ int main(const int argc, char **argv) {
             } else {
                 sms_frame();
             }
-        } while (mfb_update(SCREEN, 60) != -1);
+        } while (mfb_update(SCREEN, 120) != -1);
 
     return EXIT_FAILURE;
 }
