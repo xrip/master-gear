@@ -327,11 +327,11 @@ static inline void sg1000_frame() {
 
     const uint8_t *pattern_table = &VRAM[(vdp.registers[R4_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 4) << 11];
     const uint8_t *sprites = &VRAM[(vdp.registers[R6_SPRITE_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 7) << 11];
-    const uint8_t *color_table = &VRAM[(vdp.registers[R3_COLOR_TABLE_BASE_ADDRESS] & 0x80) << 6];
-    const uint16_t region = (vdp.registers[R4_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 3) << 8;
 
-    const uint8_t sprite_size = (vdp.registers[R1_MODE_CONTROL_2] & EXTRA_HEIGHT_ENABLED ? 16 : 8) << (vdp.registers[R1_MODE_CONTROL_2] & DOUBLED_SPRITES);
-    printf("sprite size %d\n", sprite_size);
+    const uint8_t *color_table = &VRAM[(vdp.registers[R3_COLOR_TABLE_BASE_ADDRESS] & 0x80) << 6];
+
+    const uint8_t sprite_zoom = vdp.registers[R1_MODE_CONTROL_2] & DOUBLED_SPRITES;
+    const uint8_t sprite_size = vdp.registers[R1_MODE_CONTROL_2] & EXTRA_HEIGHT_ENABLED ? 16 : 8;
 
     const uint8_t overscan_color = vdp.registers[R7_OVERSCAN_COLOR] & 0xf;
 
@@ -345,8 +345,7 @@ static inline void sg1000_frame() {
 
         // background rendering loop
         for (uint8_t column = 0; column < 32; ++column) {
-            const uint16_t tile_number = (screen_row * 32) + column;
-            const uint8_t tile_index = tiles[column] | (region & 0x300 & tile_number);
+            const uint8_t tile_index = tiles[column];
             const uint8_t pattern = pattern_table[tile_index * 8 + tile_row];
 
             const uint8_t color = color_table[tile_index * 8 + tile_row];
@@ -357,35 +356,51 @@ static inline void sg1000_frame() {
                 *screen_pixel++ = pixel_color ? pixel_color : overscan_color;
             }
         }
-
-        screen_pixel = &SCREEN[scanline * SMS_WIDTH];
         // Sprites rendering loop
         for (uint8_t sprite_index = 0; sprite_index < 128; sprite_index += 4) {
-            int16_t sprite_y = vdp.sprites[sprite_index] + 1;
-            if (sprite_y == (208 + 1)) break; // dont render anymore
+            int sprite_y = vdp.sprites[sprite_index] + 1;
+
+            if (sprite_y == 208 + 1) break; // dont render anymore
 
             if (sprite_y > 192) {
                 sprite_y -= 256;
             }
 
             if (scanline >= sprite_y && scanline < sprite_y + sprite_size) {
-                const uint8_t sprite_color = vdp.sprites[sprite_index + 3];
-                const uint8_t sprite_x = vdp.sprites[sprite_index + 1] - (sprite_color & BIT_7 ? 32 : 0);
+                uint8_t sprite_color = vdp.sprites[sprite_index + 3];
+                if (sprite_color == 0) continue;
 
-                uint8_t sprite_pattern = vdp.sprites[sprite_index + 2];
+                const uint8_t sprite_x = vdp.sprites[sprite_index + 1] - (sprite_color & BIT_7 ? 32 : 0);
+                sprite_color &= 0xf;
+
+                const uint8_t sprite_pattern = vdp.sprites[sprite_index + 2];
+                const uint8_t line_offset = scanline - sprite_y;
+                screen_pixel = &SCREEN[scanline * SMS_WIDTH + sprite_x];
 
                 if (sprite_size > 8) {
-                    sprite_pattern &= ~3;
-                }
+                    const uint16_t sprite_address = (sprite_pattern & 252) * 8 + line_offset;
 
-                const uint8_t pattern = sprites[sprite_pattern * 8 + (scanline - sprite_y)];
-                screen_pixel += sprite_x;
-                // Render pixels in the row
+                    const uint8_t pattern_lift = sprites[sprite_address];
+                    const uint8_t pattern_right = sprites[sprite_address + 16];
 
-                for (int col = sprite_size - 1; col != 0; --col) {
-                    const uint8_t bit = pattern >> col & 1;
-                    if (bit) {
-                        screen_pixel[col] = sprite_color & 0xf; // Set pixel color
+                    for (uint8_t x = 0; x < 8; ++x) {
+                        const uint8_t bit = 7 - x;
+                        if (pattern_lift >> bit & 1) {
+                            screen_pixel[x] = sprite_color; // Set pixel color
+                        }
+                        if (pattern_right >> bit & 1) {
+                            screen_pixel[8 + x] = sprite_color; // Set pixel color
+                        }
+                    }
+                } else {
+                    const uint8_t pattern = sprites[sprite_pattern * 8 + line_offset];
+                    // Render pixels in the row
+
+                    for (int col = 0; col < 8; ++col) {
+                        const uint8_t bit = pattern >> 7 - col & 1;
+                        if (bit) {
+                            screen_pixel[col] = sprite_color & 0xf; // Set pixel color
+                        }
                     }
                 }
             }
