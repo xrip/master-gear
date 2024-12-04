@@ -214,7 +214,7 @@ static inline void sms_frame() {
         uint8_t priority_table[SMS_WIDTH + 8]; // allow 8 pixels overrun
 
         const int hscroll = hscroll_lock && scanline < 16 ? 0 : vdp.registers[R8_BACKGROUND_X_SCROLL];
-        const uint8_t hscroll_fine = hscroll & 7 ;
+        const uint8_t hscroll_fine = hscroll & 7;
         uint8_t *priority_table_ptr = priority_table + hscroll_fine;
         const int nametable_scroll = 32 - (hscroll >> 3);
 
@@ -322,6 +322,79 @@ static inline void sms_frame() {
     }
 }
 
+static inline void sg1000_frame() {
+    int cpu_cycles = 0;
+
+    const uint8_t *pattern_table = &VRAM[(vdp.registers[R4_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 4) << 11];
+    const uint8_t *sprites = &VRAM[(vdp.registers[R6_SPRITE_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 7) << 11];
+    const uint8_t *color_table = &VRAM[(vdp.registers[R3_COLOR_TABLE_BASE_ADDRESS] & 0x80) << 6];
+    const uint16_t region = (vdp.registers[R4_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 3) << 8;
+
+    const uint8_t overscan_color = vdp.registers[R7_OVERSCAN_COLOR] & 0xf;
+
+    for (scanline = 0; scanline < 192; scanline++) {
+        uint8_t *screen_pixel = &SCREEN[scanline * SMS_WIDTH];
+
+        const uint8_t screen_row = scanline / 8;
+        const uint8_t tile_row = scanline & 7;
+
+        const uint8_t *tiles = &vdp.nametable[screen_row * 32];
+
+        // background rendering loop
+        for (uint8_t column = 0; column < 32; ++column) {
+            const uint16_t tile_number = (screen_row * 32) + column;
+            const uint8_t tile_index = tiles[column] | (region & 0x300 & tile_number);
+            const uint8_t pattern = pattern_table[tile_index * 8 + tile_row];
+
+            const uint8_t color = color_table[tile_index * 8 + tile_row];
+
+            for (uint8_t x = 0; x < 8; ++x) {
+                const uint8_t bit = pattern >> (7 - x) & 1;
+                const uint8_t pixel_color = bit ? color >> 4 : color & 0x0f;
+                *screen_pixel++ = pixel_color ? pixel_color : overscan_color;
+            }
+        }
+
+        screen_pixel = &SCREEN[scanline * SMS_WIDTH];
+        // Sprites rendering loop
+        for (uint8_t sprite_index = 0; sprite_index < 32; ++sprite_index) {
+            const uint8_t sprite_y = vdp.sprites[sprite_index * 4];
+            if (sprite_y == 208) break; // dont render anymore
+
+            if (scanline >= sprite_y && scanline < sprite_y + 8) {
+                const uint8_t sprite_x = vdp.sprites[sprite_index * 4 + 1];
+                const uint8_t sprite_pattern = vdp.sprites[sprite_index * 4 + 2];
+                const uint8_t sprite_color = vdp.sprites[sprite_index * 4 + 3] & 0xf;
+
+                const uint8_t pattern = sprites[sprite_pattern * 8 + tile_row];
+                screen_pixel += sprite_x;
+                // Render pixels in the row
+
+                for (int col = 0; col < 8; col++) {
+                    uint8_t bit = pattern >> 7 - col & 1;
+                    if (bit) {
+                        *screen_pixel = sprite_color; // Set pixel color
+                    }
+                    screen_pixel++;
+                }
+            }
+        }
+        cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
+    }
+    vdp.status |= VDP_VSYNC_PENDING;
+
+    cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
+    scanline++;
+
+    // vblank period
+    while (scanline++ < 262) {
+        if (vdp.status & VDP_VSYNC_PENDING && vdp.registers[R1_MODE_CONTROL_2] & ENABLE_FRAME_INTERRUPT) {
+            IntZ80(&cpu, INT_IRQ);
+        }
+        cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
+    }
+}
+
 
 int main(const int argc, char **argv) {
     const int scale = argc > 2 ? atoi(argv[1]) : 4;
@@ -361,6 +434,26 @@ int main(const int argc, char **argv) {
 
     memset(SCREEN, 255, SMS_WIDTH * SMS_HEIGHT);
 
+    const uint32_t sg_palette[16] = {
+        0x000000,
+        0x000000,
+        0x21c942,
+        0x5edc78,
+        0x5455ed,
+        0x7d75fc,
+        0xd3524d,
+        0x43ebf6,
+        0xfd5554,
+        0xff7978,
+        0xd3c153,
+        0xe5ce80,
+        0x21b03c,
+        0xc95bba,
+        0xcccccc,
+        0xffffff,
+    };
+
+    mfb_set_pallete_array(sg_palette, 0, 16);
 
     for (int y = 192; y < SMS_HEIGHT; y++) {
         for (int x = 0; x < SMS_WIDTH; x++) {
@@ -369,7 +462,8 @@ int main(const int argc, char **argv) {
     }
 
     do {
-        sms_frame(); // 192 scanlines
+        // sms_frame(); // 192 scanlines
+        sg1000_frame();
     } while (mfb_update(SCREEN, 60) != -1);
 
     return EXIT_FAILURE;

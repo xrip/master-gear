@@ -6,6 +6,18 @@ uint8_t VRAM[VRAM_SIZE]= { 0 };
 VDP vdp = {
     .nametable = &VRAM[0x3800],
     .sprites = &VRAM[0x3C00],
-    .registers = { 0 },
+    .registers = {
+        0x04,
+        0x20,
+        0xF1,
+        0xFF,
+        0x03,
+        0x81,
+        0xFB,
+        0x00,
+        0x00,
+        0x00,
+        0xFF,
+    },
 };
 
