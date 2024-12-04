@@ -1,4 +1,4 @@
-Highly portable Sega Master System (SMS) and GameGear (GG) emulator. VDP emulation code arround 300 lines of code. 
+Highly portable Sega Master System (SMS), GameGear (GG) and SG-1000 emulator. VDP emulation code arround 300 lines of code. 
 
 95% of sms/gg games working, more than 60% are playable start-to-end.
 
