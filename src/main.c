@@ -459,26 +459,7 @@ int main(const int argc, char **argv) {
 
     memset(SCREEN, 255, SMS_WIDTH * SMS_HEIGHT);
 
-    const uint32_t sg_palette[16] = {
-        0x000000,
-        0x000000,
-        0x21c942,
-        0x5edc78,
-        0x5455ed,
-        0x7d75fc,
-        0xd3524d,
-        0x43ebf6,
-        0xfd5554,
-        0xff7978,
-        0xd3c153,
-        0xe5ce80,
-        0x21b03c,
-        0xc95bba,
-        0xcccccc,
-        0xffffff,
-    };
-
-    mfb_set_pallete_array(sg_palette, 0, 16);
+    mfb_set_pallete_array(sg1000_palette, 0, 16);
 
     for (int y = 192; y < SMS_HEIGHT; y++) {
         for (int x = 0; x < SMS_WIDTH; x++) {

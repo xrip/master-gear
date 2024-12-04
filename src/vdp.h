@@ -70,8 +70,6 @@ enum TILE_ATTRIBUTES {
     TILE_VERTICAL_FLIP = BIT_10,
     TILE_PALETTE = BIT_11,
     TILE_PRIORITY = BIT_12,
-
-
 };
 
 typedef struct {
@@ -90,7 +88,24 @@ typedef struct {
     uint8_t registers[11];
 } VDP;
 
-
+static const uint32_t sg1000_palette[16] = {
+    0x000000,
+    0x000000,
+    0x21c942,
+    0x5edc78,
+    0x5455ed,
+    0x7d75fc,
+    0xd3524d,
+    0x43ebf6,
+    0xfd5554,
+    0xff7978,
+    0xd3c153,
+    0xe5ce80,
+    0x21b03c,
+    0xc95bba,
+    0xcccccc,
+    0xffffff,
+};
 /* Return values from the V counter */
 static const uint8_t vcnt[262] =
 {
