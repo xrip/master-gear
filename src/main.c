@@ -325,9 +325,9 @@ static inline void sms_frame() {
 static inline void sg1000_frame() {
     int cpu_cycles = 0;
 
-    const uint8_t *pattern_table = &VRAM[(vdp.registers[R4_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 0x3c) << 11];
+    const uint8_t *pattern_table = &VRAM[(vdp.registers[R4_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 4) << 11];
     const uint8_t *sprites = &VRAM[(vdp.registers[R6_SPRITE_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 7) << 11];
-
+    const uint16_t region = (vdp.registers[R4_PATTERN_GENERATOR_TABLE_BASE_ADDRESS] & 3) << 8;
     const uint8_t *color_table = &VRAM[(vdp.registers[R3_COLOR_TABLE_BASE_ADDRESS] & 0x80) << 6];
 
     const uint8_t sprite_size = vdp.registers[R1_MODE_CONTROL_2] & EXTRA_HEIGHT_ENABLED ? 16 : 8;
@@ -340,13 +340,14 @@ static inline void sg1000_frame() {
         const uint8_t screen_row = scanline / 8;
         const uint8_t tile_row = scanline & 7;
 
-        const uint8_t *tiles_row = &vdp.nametable[screen_row * 32];
+        const uint16_t nametable_offset = screen_row * 32;
+        const uint8_t *tiles_row = &vdp.nametable[nametable_offset];
 
         // background rendering loop
         for (uint8_t column = 0; column < 32; ++column) {
-            const uint16_t tile = tiles_row[column] * 8 + tile_row;
-            const uint8_t pattern = pattern_table[tile];
-            const uint8_t color = color_table[tile];
+            const uint16_t tile_index = (tiles_row[column] | region & 0x300 & nametable_offset + column ) * 8 + tile_row;
+            const uint8_t pattern = pattern_table[tile_index];
+            const uint8_t color = color_table[tile_index];
 
             const uint8_t fg_color = color >> 4;
             const uint8_t bg_color = color & 0xf;
