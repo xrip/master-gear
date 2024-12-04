@@ -434,12 +434,16 @@ int main(const int argc, char **argv) {
     if (readfile(filename, ROM) == 1048576) {
         page_mask = 0x7f;
     }
+
     if (len >= 2) {
         if (strcmp(&filename[len - 2], "gg") == 0) is_gamegear = 1;
         if (strcmp(&filename[len - 2], "sg") == 0) is_sg1000 = 1;
     }
 
-    if (!mfb_open(is_sg1000 ? "SG-1000" : is_gamegear ? "Sega Gamegear" : "Sega Master System", SMS_WIDTH, SMS_HEIGHT, scale))
+    char window_title[512] = "";
+    strcat(window_title, is_sg1000 ? "SG-1000 - " : is_gamegear ? "Sega Gamegear - " : "Sega Master System - ");
+    strcat(window_title, filename);
+    if (!mfb_open(window_title, SMS_WIDTH, SMS_HEIGHT, scale))
         return EXIT_FAILURE;
 
     key_status = (uint8_t *) mfb_keystatus();
