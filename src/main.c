@@ -31,7 +31,7 @@ uint8_t *ram_rom_slot3 = ROM;
 uint8_t slot3_is_ram = 0;
 static uint8_t *key_status;
 
-uint8_t is_gamegear = 0;
+uint8_t is_gamegear = 0, is_sg1000 = 0;
 uint8_t page_mask = 0x1f;
 
 void WrZ80(register word address, const register byte value) {
@@ -436,8 +436,9 @@ int main(const int argc, char **argv) {
     if (readfile(filename, ROM) == 1048576) {
         page_mask = 0x7f;
     }
-    if (len >= 2 && strcmp(&filename[len - 2], "gg") == 0) {
-        is_gamegear = 1;
+    if (len >= 2) {
+        if (strcmp(&filename[len - 2], "gg") == 0) is_gamegear = 1;
+        if (strcmp(&filename[len - 2], "sg") == 0) is_sg1000 = 1;
     }
 
     if (!mfb_open("Sega Master System", SMS_WIDTH, SMS_HEIGHT, scale))
@@ -487,10 +488,13 @@ int main(const int argc, char **argv) {
         }
     }
 
-    do {
-        // sms_frame(); // 192 scanlines
-        sg1000_frame();
-    } while (mfb_update(SCREEN, 60) != -1);
+        do {
+            if (is_sg1000) {
+                sg1000_frame();
+            } else {
+                sms_frame();
+            }
+        } while (mfb_update(SCREEN, 60) != -1);
 
     return EXIT_FAILURE;
 }
