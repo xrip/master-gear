@@ -492,7 +492,7 @@ int main(const int argc, char **argv) {
         } else {
             sms_frame();
         }
-    } while (mfb_update(SCREEN, 120) != -1);
+    } while (mfb_update(SCREEN, 60) != -1);
 
     return EXIT_FAILURE;
 }
