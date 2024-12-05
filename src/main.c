@@ -21,6 +21,7 @@ uint8_t SCREEN[SMS_WIDTH * SMS_HEIGHT + 8] = {0}; // +8 possible sprite overflow
 
 
 uint8_t RAM[8192] = {0};
+
 uint8_t ROM[1024 << 10] = {0};
 uint8_t RAM_BANK[2][16384] = {0};
 
@@ -35,7 +36,10 @@ uint8_t is_gamegear = 0, is_sg1000 = 0;
 uint8_t page_mask = 0x1f;
 
 void WrZ80(register word address, const register byte value) {
-    // printf("Write %04x to %04x\n", value, address);
+    if (address >= 0x2000 && address < 0x4000) {
+        rom_slot1[address] = value;
+    }
+
     if (address >= 0x8000 && address < 0xC000 && slot3_is_ram) {
         ram_rom_slot3[address - 0x8000] = value;
         return;
@@ -86,6 +90,10 @@ byte RdZ80(const register word address) {
     if (address <= 1024) {
         // fixed 1kb
         // non pageable
+        return ROM[address];
+    }
+
+    if (is_sg1000 && address < 0x2000) {
         return ROM[address];
     }
 
@@ -460,10 +468,13 @@ int main(const int argc, char **argv) {
     memset(VRAM, 0, sizeof(VRAM));
     ResetZ80(&cpu);
 
-
     memset(SCREEN, 255, SMS_WIDTH * SMS_HEIGHT);
 
     mfb_set_pallete_array(sg1000_palette, 0, 16);
+
+    if (is_sg1000) {
+        rom_slot1 = &RAM_BANK[0][0];
+    }
 
     for (int y = 192; y < SMS_HEIGHT; y++) {
         for (int x = 0; x < SMS_WIDTH; x++) {
