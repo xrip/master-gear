@@ -235,8 +235,8 @@ static inline void sms_frame() {
         const uint16_t *tile_ptr = (uint16_t *) &vdp.nametable[screen_row * 64];
 
         // background rendering loop
-        for (uint8_t column = nametable_scroll; column < nametable_scroll+32; ++column) {
-            const uint16_t tile_info = tile_ptr[column & 31];
+        for (uint8_t column = 0; column < 32; ++column) {
+            const uint16_t tile_info = tile_ptr[(nametable_scroll + column) & 31];
             const uint8_t priority = (tile_info & TILE_PRIORITY) >> 12;
 
             const uint8_t palette_offset = (tile_info & TILE_PALETTE) >> 7; // palette select
