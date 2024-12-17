@@ -73,18 +73,17 @@ byte InZ80(register word port) {
     switch (port & 0xE0) {
         case 0xA0:
             return (port & 1) ? vdp_status() : vdp_read();
-        case 0xE0:
-            case 0xDC: {
+        case 0xE0: {
             uint8_t buttons = 0xff;
 
-            if (key_status[0x26]) buttons ^= 0b1;
-            if (key_status[0x28]) buttons ^= 0b10;
-            if (key_status[0x25]) buttons ^= 0b100;
-            if (key_status[0x27]) buttons ^= 0b1000;
+            if (key_status[VK_UP]) buttons ^= 0b1;
+            if (key_status[VK_DOWN]) buttons ^= 0b10;
+            if (key_status[VK_LEFT]) buttons ^= 0b100;
+            if (key_status[VK_RIGHT]) buttons ^= 0b1000;
             if (key_status['Z']) buttons ^= 0b10000;
             if (key_status['X']) buttons ^= 0b100000;
-            if (key_status[0x0d]) buttons ^= 0b1000000;
-            if (key_status[0x20]) buttons ^= 0b10000000;
+            // if (key_status[VK_RETURN]) buttons ^= 0b1000000;
+            // if (key_status[VK_SPACE]) buttons ^= 0b10000000;
 
             return buttons;
             }
