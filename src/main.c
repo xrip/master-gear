@@ -10,6 +10,8 @@
 #include "z80/z80.h"
 #include "sn76489.h"
 
+#include "cv_bios.h"
+
 #include "sms.h"
 #include "vdp.h"
 // create a CPU core object
@@ -32,87 +34,64 @@ uint8_t *ram_rom_slot3 = ROM;
 uint8_t slot3_is_ram = 0;
 static uint8_t *key_status;
 
-uint8_t is_gamegear = 0, is_sg1000 = 0;
+uint8_t is_gamegear = 0, is_sg1000 = 0, is_cv = 0;
 uint8_t page_mask = 0x1f;
 
 void WrZ80(register word address, const register byte value) {
-    if (address >= 0x2000 && address < 0x4000) {
-        rom_slot1[address] = value;
-    }
-
-    if (address >= 0x8000 && address < 0xC000 && slot3_is_ram) {
-        ram_rom_slot3[address - 0x8000] = value;
-        return;
-    }
-
-    if (address >= 0xC000) {
-        RAM[address & 8191] = value;
-
-        if (address >= 0xFFFC) {
-            // Memory paging
-            const uint8_t page = value & page_mask; // todo check rom size
-            switch (address) {
-                case 0xFFFC:
-                    if (value >> 3 & 1) {
-                        slot3_is_ram = 1 + (value >> 2); // ram bank 2 or 1
-                    } else {
-                        slot3_is_ram = 0;
-                    }
-                    break;
-                case 0xFFFD:
-                    rom_slot1 = ROM + page * 0x4000;
-                // printf("slot 1 is ROM page %i\n", page);
-                    break;
-                case 0xFFFE:
-                    rom_slot2 = ROM + page * 0x4000;
-                    rom_slot2 -= 0x4000;
-                // printf("slot 2 is ROM page %i\n", page);
-                    break;
-                case 0xFFFF:
-                    if (slot3_is_ram) {
-                        ram_rom_slot3 = &RAM_BANK[slot3_is_ram - 2][0];
-                        printf("slot 3 is RAM bank %i\n", slot3_is_ram - 2);
-                        // ram_rom_slot3 -= 0x8000;
-                    } else {
-                        // printf("slot 3 is ROM page %i\n", page);
-                        ram_rom_slot3 = ROM + page * 0x4000;
-                        ram_rom_slot3 -= 0x8000;
-                    }
-
-                    break;
-            }
-        }
+    if (address >= 0x6000 && address < 0x8000) {
+        RAM[address & 1023] = value;
     }
 }
 
 byte RdZ80(const register word address) {
-    // printf("Mem read %x\n", address);
-    if (address <= 1024) {
-        // fixed 1kb
-        // non pageable
-        return ROM[address];
+    if (address < 0x2000) { // BIOS
+        return cv_bios[address];
+    }
+    if (address >= 0x6000 && address < 0x8000) {
+        return RAM[address & 1023];
+    }
+    if (address >= 0x8000) {
+        return ROM[address & 0x7FFF];
     }
 
-    if (is_sg1000 && address < 0x2000) {
-        return ROM[address];
-    }
-
-    if (address < 0x4000) {
-        return rom_slot1[address];
-    }
-
-    if (address < 0x8000) {
-        return rom_slot2[address];
-    }
-
-    if (address < 0xC000) {
-        return ram_rom_slot3[address];
-    }
-
-    return RAM[address & 8191];
+    return 0xFF;
 }
-
 void OutZ80(register word port, register byte value) {
+
+    switch (port & 0xE0) {
+        case 0xA0:
+            // printf("CV port write %x %x %x\n", port & 0xE0, port & 1, value);
+            vdp_write(port, value);
+        break;
+        case 0xE0:
+             sn76489_out(value);
+        break;
+    }
+}
+byte InZ80(register word port) {
+    // printf("CV port read %x\n", port & 0xE0);
+    switch (port & 0xE0) {
+        case 0xA0:
+            return (port & 1) ? vdp_status() : vdp_read();
+        case 0xE0:
+            case 0xDC: {
+            uint8_t buttons = 0xff;
+
+            if (key_status[0x26]) buttons ^= 0b1;
+            if (key_status[0x28]) buttons ^= 0b10;
+            if (key_status[0x25]) buttons ^= 0b100;
+            if (key_status[0x27]) buttons ^= 0b1000;
+            if (key_status['Z']) buttons ^= 0b10000;
+            if (key_status['X']) buttons ^= 0b100000;
+            if (key_status[0x0d]) buttons ^= 0b1000000;
+            if (key_status[0x20]) buttons ^= 0b10000000;
+
+            return buttons;
+            }
+    }
+    return 0xff;
+}
+void OutZ801(register word port, register byte value) {
     // printf("Z80 out port %02x value %02x\n", port & 0xff, value);
     switch (port & 0xff) {
         case 0x3E:
@@ -142,7 +121,7 @@ void OutZ80(register word port, register byte value) {
     }
 }
 
-byte InZ80(register word port) {
+byte InZ801(register word port) {
     // printf("Z80 in %02x\n", port & 0xff);
 
     switch (port & 0xff) {
@@ -410,7 +389,7 @@ static inline void sg1000_frame() {
     // vblank period
     while (scanline++ < 262) {
         if (vdp.status & VDP_VSYNC_PENDING && vdp.registers[R1_MODE_CONTROL_2] & ENABLE_FRAME_INTERRUPT) {
-            IntZ80(&cpu, INT_IRQ);
+            IntZ80(&cpu, INT_NMI);
         }
         cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
     }
@@ -435,6 +414,7 @@ int main(const int argc, char **argv) {
     if (len >= 2) {
         if (strcmp(&filename[len - 2], "gg") == 0) is_gamegear = 1;
         if (strcmp(&filename[len - 2], "sg") == 0) is_sg1000 = 1;
+        if (strcmp(&filename[len - 3], "col") == 0) is_cv = 1;
     }
 
     char window_title[512] = "";
@@ -465,14 +445,14 @@ int main(const int argc, char **argv) {
         // rom_slot1 = &RAM_BANK[0][0];
     }
 
-    for (int y = 192; y < SMS_HEIGHT; y++) {
+    for (int y = 0; y < SMS_HEIGHT; y++) {
         for (int x = 0; x < SMS_WIDTH; x++) {
             SCREEN[x + y * SMS_WIDTH] = (x / 16) + ((y / 16) & 1) * 16;
         }
     }
 
     do {
-        if (is_sg1000) {
+        if (is_sg1000 || is_cv) {
             sg1000_frame();
         } else {
             sms_frame();
