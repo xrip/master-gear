@@ -246,7 +246,7 @@ static inline void vdp_write(const uint8_t reg, const uint8_t value) {
                 }
 
                 if (vdp.code == 2) {
-                    printf("Register write %x %x\n", value & 0xf, control_word & 0xff);
+                    // printf("Register write %x %x\n", value & 0xf, control_word & 0xff);
                     vdp.registers[value & 0xf] = control_word & 0xff;
 
                     vdp.nametable = &VRAM[(vdp.registers[R2_NAMETABLE_BASE_ADDRESS] << 10) & 0x3800];

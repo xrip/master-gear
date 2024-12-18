@@ -54,7 +54,7 @@ byte RdZ80(const register word address) {
         return ROM[address & 0x7FFF];
     }
 
-    return 0xFF;
+    return 0;
 }
 void OutZ80(register word port, register byte value) {
 
@@ -74,21 +74,28 @@ byte InZ80(register word port) {
         case 0xA0:
             return (port & 1) ? vdp_status() : vdp_read();
         case 0xE0: {
-            uint8_t buttons = 0xff;
+            if (port & 2) {
 
-            if (key_status[VK_UP]) buttons ^= 0b1;
-            if (key_status[VK_DOWN]) buttons ^= 0b10;
-            if (key_status[VK_LEFT]) buttons ^= 0b100;
-            if (key_status[VK_RIGHT]) buttons ^= 0b1000;
-            if (key_status['Z']) buttons ^= 0b10000;
-            if (key_status['X']) buttons ^= 0b100000;
-            // if (key_status[VK_RETURN]) buttons ^= 0b1000000;
-            // if (key_status[VK_SPACE]) buttons ^= 0b10000000;
+                /*if (key_status[VK_UP]) buttons |= 0x01;
+                if (key_status[VK_DOWN]) buttons |= 0x04;
+                if (key_status[VK_LEFT]) buttons |= 0x08;
+                if (key_status[VK_RIGHT]) buttons |= 0x02;
+                if (key_status['Z']) buttons |= 0x40;*/
 
-            return buttons;
+                return ~0;
+            } else {
+                uint8_t buttons = 0x7F;
+                if (key_status[VK_UP]) buttons &= 0xFE;
+                if (key_status[VK_DOWN]) buttons &= 0xFB;
+                if (key_status[VK_LEFT]) buttons &= 0xF7;
+                if (key_status[VK_RIGHT]) buttons &= 0xFD;
+                if (key_status['Z']) buttons &= 0xBF;
+
+                return buttons;
+            }
             }
     }
-    return 0xff;
+    return 0;
 }
 void OutZ801(register word port, register byte value) {
     // printf("Z80 out port %02x value %02x\n", port & 0xff, value);
@@ -382,8 +389,8 @@ static inline void sg1000_frame() {
     }
     vdp.status |= VDP_VSYNC_PENDING;
 
-    cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
-    scanline++;
+    // cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
+    // scanline++;
 
     // vblank period
     while (scanline++ < 262) {
