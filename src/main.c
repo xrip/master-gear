@@ -35,6 +35,8 @@ static uint8_t *key_status;
 uint8_t is_gamegear = 0, is_sg1000 = 0;
 uint8_t page_mask = 0x1f;
 
+void (*frame_function)();
+
 void WrZ80(register word address, const register byte value) {
     if (address >= 0x2000 && address < 0x4000) {
         rom_slot1[address] = value;
@@ -462,7 +464,7 @@ int main(const int argc, char **argv) {
     mfb_set_pallete_array(sg1000_palette, 0, 16);
 
     if (is_sg1000) {
-        // rom_slot1 = &RAM_BANK[0][0];
+        rom_slot1 = &RAM_BANK[0][0];
     }
 
     for (int y = 192; y < SMS_HEIGHT; y++) {
@@ -470,13 +472,14 @@ int main(const int argc, char **argv) {
             SCREEN[x + y * SMS_WIDTH] = (x / 16) + ((y / 16) & 1) * 16;
         }
     }
+    if (is_sg1000) {
+        frame_function = sg1000_frame;
+    } else {
+        frame_function = sms_frame;
+    }
 
     do {
-        if (is_sg1000) {
-            sg1000_frame();
-        } else {
-            sms_frame();
-        }
+        frame_function();
     } while (mfb_update(SCREEN, 60) != -1);
 
     return EXIT_FAILURE;
