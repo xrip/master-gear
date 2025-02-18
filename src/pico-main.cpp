@@ -5,7 +5,7 @@
 #include <pico/stdlib.h>
 
 extern "C" {
-//#include "emu2413.h"
+#include "emu2413.h"
 #include "z80/z80.h"
 #include "sn76489.h"
 
@@ -24,6 +24,9 @@ extern "C" {
 extern char __flash_binary_end;
 #define FLASH_TARGET_OFFSET (((((uintptr_t)&__flash_binary_end - XIP_BASE) / FLASH_SECTOR_SIZE) + 4) * FLASH_SECTOR_SIZE)
 static const uintptr_t rom = XIP_BASE + FLASH_TARGET_OFFSET;
+
+
+uint8_t is_gamegear = 0, is_sg1000 = 0;
 
 static FATFS fs;
 bool reboot = false;
@@ -204,7 +207,12 @@ bool filebrowser_loadfile(const char pathname[256]) {
 
     strcpy(filename, fileinfo.fname);
 
-    is_gg = strstr(pathname, ".gg") != nullptr;
+    const size_t len = strlen(filename);
+    if (len >= 2) {
+        if (strcmp(&filename[len - 2], "gg") == 0) is_gamegear = 1;
+        if (strcmp(&filename[len - 2], "sg") == 0) is_sg1000 = 1;
+    }
+    // is_gg = strstr(pathname, ".gg") != nullptr;
     return true;
 }
 
@@ -410,9 +418,8 @@ uint8_t *rom_slot2 = (uint8_t *) rom;
 uint8_t *ram_rom_slot3 = (uint8_t *) rom;
 
 uint8_t slot3_is_ram = 0;
-static uint8_t *key_status;
 
-uint8_t is_gamegear = 0, is_sg1000 = 0;
+
 uint8_t page_mask = 0x1f;
 
 void (*frame_function)();
@@ -548,14 +555,16 @@ byte InZ80(register word port) {
         case 0xDC: {
             uint8_t buttons = 0xff;
 
-            // if (key_status[0x26]) buttons ^= 0b1;
-            // if (key_status[0x28]) buttons ^= 0b10;
-            // if (key_status[0x25]) buttons ^= 0b100;
-            // if (key_status[0x27]) buttons ^= 0b1000;
-            // if (key_status['Z']) buttons ^= 0b10000;
-            // if (key_status['X']) buttons ^= 0b100000;
-            // if (key_status[0x0d]) buttons ^= 0b1000000;
-            // if (key_status[0x20]) buttons ^= 0b10000000;
+            if (gamepad1_bits.up) buttons ^= 0b1;
+            if (gamepad1_bits.down) buttons ^= 0b10;
+            if (gamepad1_bits.left) buttons ^= 0b100;
+            if (gamepad1_bits.right) buttons ^= 0b1000;
+
+            if (gamepad1_bits.a) buttons ^= 0b10000;
+            if (gamepad1_bits.b) buttons ^= 0b100000;
+
+            if (gamepad1_bits.start) buttons ^= 0b1000000;
+            if (gamepad1_bits.select) buttons ^= 0b10000000;
 
             return buttons;
         }
@@ -803,16 +812,23 @@ static inline bool overclock() {
     return set_sys_clock_khz(frequencies[frequency_index] * KHZ, true);
 #endif
 }
-#define frame_tick (16666)
-
+#define NTSC_FRAME_TICK (16667)
+i2s_config_t i2s_config;
 /* Renderer loop on Pico's second core */
 void __time_critical_func(render_core)() {
+
     multicore_lockout_victim_init();
 
     ps2kbd.init_gpio();
     nespad_begin(clock_get_hz(clk_sys) / 1000, NES_GPIO_CLK, NES_GPIO_DATA, NES_GPIO_LAT);
 
     graphics_init();
+
+    i2s_config = i2s_get_default_config();
+    i2s_config.sample_freq = SOUND_FREQUENCY;
+    i2s_config.dma_trans_count = 1;
+    i2s_volume(&i2s_config, 0);
+    i2s_init(&i2s_config);
 
     const auto buffer = static_cast<uint8_t *>(SCREEN);
     graphics_set_buffer(buffer, SMS_WIDTH, SMS_HEIGHT);
@@ -830,11 +846,11 @@ void __time_critical_func(render_core)() {
     // 60 FPS loop
 
     uint64_t tick = time_us_64();
-    uint64_t last_frame_tick = tick;
+    uint64_t last_frame_tick = tick, last_sound_tick = tick;
 
     while (true) {
 
-        if (tick >= last_frame_tick + frame_tick) {
+        if (tick >= last_frame_tick + NTSC_FRAME_TICK) {
 #ifdef TFT
             refresh_lcd();
 #endif
@@ -842,6 +858,13 @@ void __time_critical_func(render_core)() {
             nespad_tick();
 
             last_frame_tick = tick;
+        }
+
+        if (tick >= last_sound_tick + (1000000 / SOUND_FREQUENCY)) {
+            int16_t samples[2];
+            samples[0] = samples[1] = sn76489_sample();
+            i2s_dma_write(&i2s_config, samples);
+            last_sound_tick = tick;
         }
 
         tick = time_us_64();
@@ -853,11 +876,12 @@ void __time_critical_func(render_core)() {
 
     __unreachable();
 }
-int frame, frame_cnt = 0;
-int frame_timer_start = 0;
-bool limit_fps = false;
+
+constexpr bool limit_fps = true;
 
 int main() {
+    uint frame_cnt = 0, frame_timer_start = 0;
+
     overclock();
     // ym2413 = OPLL_new(3579545, SOUND_FREQUENCY);
     // OPLL_reset(ym2413);
@@ -881,8 +905,9 @@ int main() {
     while (true) {
         graphics_set_mode(TEXTMODE_DEFAULT);
         filebrowser(HOME_DIR, "sms,gg,sg");
-        graphics_set_mode(GRAPHICSMODE_DEFAULT);
-        graphics_set_offset(is_gg ? 40 : 16, 24);
+
+        graphics_set_mode(is_gamegear ? GG_160x144 : GRAPHICSMODE_DEFAULT);
+        graphics_set_offset(is_gamegear ? 40 : 16, 24);
 
         if (is_sg1000) {
             frame_function = sg1000_frame;
@@ -890,7 +915,7 @@ int main() {
             frame_function = sms_frame;
         }
 
-        sn76489_reset();
+
 
         memset(RAM, 0, sizeof(RAM));
         memset(VRAM, 0, sizeof(VRAM));
@@ -899,12 +924,10 @@ int main() {
         while (!reboot) {
             gpio_put(PICO_DEFAULT_LED_PIN, false);
             frame_function();
-            frame++;
-            if (limit_fps) {
 
-                frame_cnt++;
-                if (frame_cnt == 6) {
-                    while (time_us_64() - frame_timer_start < frame_tick * 60);  // 60 Hz
+            if (limit_fps) {
+                if (++frame_cnt == 3) {
+                    while (time_us_64() - frame_timer_start < NTSC_FRAME_TICK * 3);  // 60 Hz
                     frame_timer_start = time_us_64();
                     frame_cnt = 0;
                 }
@@ -912,6 +935,7 @@ int main() {
 
             tight_loop_contents();
         }
+        reboot = false;
     }
     __unreachable();
 }

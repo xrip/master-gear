@@ -218,6 +218,12 @@ static inline void vdp_write(const uint8_t reg, const uint8_t value) {
                                                 (color_latch >> 8 & 0b1111) << 4)
                             );
 
+#else
+                            graphics_set_palette(vdp.address >> 1, RGB888(
+                            (color_latch & 0b1111) << 4,
+(color_latch >> 4 & 0b1111) << 4,
+(color_latch >> 8 & 0b1111) << 4)
+);
                             #endif
                         } else {
                             color_latch = value;
