@@ -339,7 +339,7 @@ static void CodesCB(register Z80 *R)
     default:
       if(R->TrapBadOps)
         printf
-        (   
+        (
           "[Z80 %lX] Unrecognized instruction: CB %02X at PC=%04X\n",
           (long)(R->User),OpZ80(R->PC.W-1),R->PC.W-2
         );

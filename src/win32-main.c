@@ -1,6 +1,5 @@
 #pragma GCC push_options
 #pragma GCC optimize ("unroll-loops")
-
 #include <stdio.h>
 #include <windows.h>
 

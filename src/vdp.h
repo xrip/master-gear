@@ -1,10 +1,13 @@
 #pragma once
 #include <stdint.h>
-#include <stdio.h>
-
+#if !PICO_ON_DEVICE
+#include "win32/MiniFB.h"
+#else
+#include "graphics.h"
+#endif
 #include "shared.h"
 
-#include "win32/MiniFB.h"
+
 
 #define VRAM_SIZE 16384
 #define VRAM_SIZE_WRAP (VRAM_SIZE - 1)
@@ -207,23 +210,33 @@ static inline void vdp_write(const uint8_t reg, const uint8_t value) {
                         static uint16_t color_latch;
                         if (vdp.address & 1) {
                             color_latch |= value << 8;
-
+#if !PICO_ON_DEVICE
                             mfb_set_pallete(vdp.address >> 1,
                                             MFB_RGB(
                                                 (color_latch & 0b1111) << 4,
                                                 (color_latch >> 4 & 0b1111) << 4,
                                                 (color_latch >> 8 & 0b1111) << 4)
                             );
+
+                            #endif
                         } else {
                             color_latch = value;
                         }
                     } else {
+#if !PICO_ON_DEVICE
                         mfb_set_pallete(vdp.address & 31,
                                         MFB_RGB(
                                             (value & 3) << 6,
                                             (value >> 2 & 3) << 6,
                                             (value >> 4 & 3) << 6)
                         );
+#else
+                        graphics_set_palette(vdp.address & 31, RGB888(
+                        (value & 3) << 6,
+(value >> 2 & 3) << 6,
+(value >> 4 & 3) << 6)
+                            );
+#endif
                     }
 
                     break;

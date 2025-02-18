@@ -1,7 +1,7 @@
 #include "vdp.h"
 
 uint16_t scanline = 0;
-uint8_t VRAM[VRAM_SIZE]= { 0 };
+uint8_t VRAM[VRAM_SIZE] __attribute__ ((aligned(4))) = { 0 };
 
 VDP vdp = {
     .nametable = &VRAM[0x3800],
