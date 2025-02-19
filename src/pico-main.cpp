@@ -30,7 +30,6 @@ uint8_t is_gamegear = 0, is_sg1000 = 0;
 
 static FATFS fs;
 bool reboot = false;
-struct semaphore vga_start_semaphore;
 
 bool __uninitialized_ram(is_gg) = false;
 char __uninitialized_ram(filename[256]);
@@ -406,12 +405,12 @@ void filebrowser(const char pathname[256], const char executables[11]) {
 // create a CPU core object
 Z80 cpu;
 // OPLL *ym2413;
-uint8_t ym2413_status;
+// uint8_t ym2413_status;
 
 uint8_t RAM[8192] __attribute__ ((aligned(4))) = {0};
 
 uint8_t * ROM = (uint8_t *) rom;
-uint8_t RAM_BANK[2][16384] __attribute__ ((aligned(4))) = {0};
+// uint8_t RAM_BANK[2][16384] __attribute__ ((aligned(4))) = {0};
 
 uint8_t *rom_slot1 = (uint8_t *) rom;
 uint8_t *rom_slot2 = (uint8_t *) rom;
@@ -459,8 +458,8 @@ void WrZ80(register word address, const register byte value) {
                     break;
                 case 0xFFFF:
                     if (slot3_is_ram) {
-                        ram_rom_slot3 = &RAM_BANK[slot3_is_ram - 2][0];
-                        printf("slot 3 is RAM bank %i\n", slot3_is_ram - 2);
+                        // ram_rom_slot3 = &RAM_BANK[slot3_is_ram - 2][0];
+                        // printf("slot 3 is RAM bank %i\n", slot3_is_ram - 2);
                         // ram_rom_slot3 -= 0x8000;
                     } else {
                         // printf("slot 3 is ROM page %i\n", page);
@@ -509,7 +508,7 @@ void OutZ80(register word port, register byte value) {
                 rom_slot2 = ROM + 0x4000;
             }
             if (value & BIT_2) {
-                printf("IO enabled\n");
+                // printf("IO enabled\n");
             }
             break;
         case 0x7E: sn76489_out(value);
@@ -526,8 +525,8 @@ void OutZ80(register word port, register byte value) {
         case 0xF1:
             // OPLL_writeIO(ym2413, port, value);
             break;
-        case 0xF2: ym2413_status = value & 3;
-            break;
+        // case 0xF2: ym2413_status = value & 3;
+            // break;
     }
 }
 
@@ -568,7 +567,7 @@ byte InZ80(register word port) {
 
             return buttons;
         }
-        case 0xF2: return ym2413_status;
+        // case 0xF2: return ym2413_status;
     }
     return 0xff;
 }
@@ -816,9 +815,52 @@ static inline bool overclock() {
 i2s_config_t i2s_config;
 /* Renderer loop on Pico's second core */
 void __time_critical_func(render_core)() {
-
     multicore_lockout_victim_init();
 
+
+
+    // 60 FPS loop
+
+    uint64_t tick = time_us_64();
+    uint64_t last_frame_tick = tick, last_sound_tick = tick;
+
+    while (true) {
+
+        if (tick >= last_frame_tick + NTSC_FRAME_TICK) {
+#ifdef TFT
+            refresh_lcd();
+#endif
+            ps2kbd.tick();
+            nespad_tick();
+
+            last_frame_tick = tick;
+        }
+
+        if (tick >= last_sound_tick + (1000000 / SOUND_FREQUENCY)) {
+            int16_t samples[2];
+            samples[0] = samples[1] = sn76489_sample(); // + OPLL_calc(ym2413);
+            i2s_dma_write(&i2s_config, samples);
+            last_sound_tick = tick;
+        }
+
+        tick = time_us_64();
+
+        // tuh_task();
+        // hid_app_task();
+        tight_loop_contents();
+    }
+
+    __unreachable();
+}
+
+constexpr bool limit_fps = true;
+
+int main() {
+    uint frame_cnt = 0, frame_timer_start = 0;
+
+    overclock();
+
+    // ym2413 = OPLL_new(3579545, SOUND_FREQUENCY);
     ps2kbd.init_gpio();
     nespad_begin(clock_get_hz(clk_sys) / 1000, NES_GPIO_CLK, NES_GPIO_DATA, NES_GPIO_LAT);
 
@@ -841,54 +883,7 @@ void __time_critical_func(render_core)() {
     }
 
     graphics_set_flashmode(false, false);
-    sem_acquire_blocking(&vga_start_semaphore);
-
-    // 60 FPS loop
-
-    uint64_t tick = time_us_64();
-    uint64_t last_frame_tick = tick, last_sound_tick = tick;
-
-    while (true) {
-
-        if (tick >= last_frame_tick + NTSC_FRAME_TICK) {
-#ifdef TFT
-            refresh_lcd();
-#endif
-            ps2kbd.tick();
-            nespad_tick();
-
-            last_frame_tick = tick;
-        }
-
-        if (tick >= last_sound_tick + (1000000 / SOUND_FREQUENCY)) {
-            int16_t samples[2];
-            samples[0] = samples[1] = sn76489_sample();
-            i2s_dma_write(&i2s_config, samples);
-            last_sound_tick = tick;
-        }
-
-        tick = time_us_64();
-
-        // tuh_task();
-        // hid_app_task();
-        tight_loop_contents();
-    }
-
-    __unreachable();
-}
-
-constexpr bool limit_fps = true;
-
-int main() {
-    uint frame_cnt = 0, frame_timer_start = 0;
-
-    overclock();
-    // ym2413 = OPLL_new(3579545, SOUND_FREQUENCY);
-    // OPLL_reset(ym2413);
-
-    sem_init(&vga_start_semaphore, 0, 1);
     multicore_launch_core1(render_core);
-    sem_release(&vga_start_semaphore);
 
 
     gpio_init(PICO_DEFAULT_LED_PIN);
@@ -907,7 +902,7 @@ int main() {
         filebrowser(HOME_DIR, "sms,gg,sg");
 
         graphics_set_mode(is_gamegear ? GG_160x144 : GRAPHICSMODE_DEFAULT);
-        graphics_set_offset(is_gamegear ? 40 : 16, 24);
+        graphics_set_offset(is_gamegear ? 80 : 32, is_gamegear? 24 : 12);
 
         if (is_sg1000) {
             frame_function = sg1000_frame;
@@ -920,9 +915,10 @@ int main() {
         memset(RAM, 0, sizeof(RAM));
         memset(VRAM, 0, sizeof(VRAM));
         ResetZ80(&cpu);
+        sn76489_reset();
+        // OPLL_reset(ym2413);
 
         while (!reboot) {
-            gpio_put(PICO_DEFAULT_LED_PIN, false);
             frame_function();
 
             if (limit_fps) {

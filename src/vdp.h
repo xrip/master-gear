@@ -238,10 +238,10 @@ static inline void vdp_write(const uint8_t reg, const uint8_t value) {
                         );
 #else
                         graphics_set_palette(vdp.address & 31, RGB888(
-                        (value & 3) << 6,
+                        (value >> 4 & 3) << 6,
 (value >> 2 & 3) << 6,
-(value >> 4 & 3) << 6)
-                            );
+(value & 3) << 6
+));
 #endif
                     }
 

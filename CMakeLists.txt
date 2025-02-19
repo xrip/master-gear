@@ -10,6 +10,10 @@ project(master-gear C CXX ASM)
 enable_language(CXX)
 SET(BUILD_NAME "${PROJECT_NAME}")
 
+option(SOFTTV "Enable TV soft composite output" OFF)
+option(TFT "Enable TFT display" OFF)
+option(ILI9341 "Enable TFT ILI9341 display" OFF)
+
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_STANDARD 20)
 
@@ -47,16 +51,35 @@ else()
     add_subdirectory(drivers/sdcard)
     add_subdirectory(drivers/vga-nextgen)
 
+    add_subdirectory(drivers/st7789)
+    add_subdirectory(drivers/hdmi)
+    add_subdirectory(drivers/tv)
+    add_subdirectory(drivers/tv-software)
+
     add_subdirectory(drivers/graphics)
     add_subdirectory(drivers/audio)
     add_subdirectory(drivers/nespad)
 
-    target_compile_definitions(${PROJECT_NAME} PRIVATE
-            VGA
-    )
-    target_link_libraries(${PROJECT_NAME} PRIVATE vga-nextgen)
-    SET(BUILD_NAME "${BUILD_NAME}-VGA")
+    IF(TFT)
+        target_link_libraries(${PROJECT_NAME} PRIVATE st7789)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE TFT)
+        SET(BUILD_NAME "${BUILD_NAME}-TFT")
+        IF(ILI9341)
+            SET(BUILD_NAME "${BUILD_NAME}-ILI9341")
+            target_compile_definitions(${PROJECT_NAME} PRIVATE ILI9341)
+        ELSE()
+            SET(BUILD_NAME "${BUILD_NAME}-ST7789")
+        ENDIF()
+    ELSEIF(SOFTTV)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE SOFTTV)
+        target_link_libraries(${PROJECT_NAME} PRIVATE tv-software)
+        SET(BUILD_NAME "${BUILD_NAME}-TV-SOFT")
+    ELSE()
 
+        target_compile_definitions(${PROJECT_NAME} PRIVATE VGA)
+        target_link_libraries(${PROJECT_NAME} PRIVATE vga-nextgen)
+        SET(BUILD_NAME "${BUILD_NAME}-VGA")
+    ENDIF()
 
     target_link_libraries(${PROJECT_NAME} PRIVATE
             graphics
