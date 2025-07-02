@@ -86,6 +86,7 @@ typedef struct {
     /* 32 for SMS, 64 for GG */
     uint8_t CRAM[64];
     uint8_t registers[11];
+    uint8_t line_interrupt_counter; // Active countdown timer for line interrupts
 } VDP;
 
 static const uint32_t sg1000_palette[16] = {
@@ -246,7 +247,12 @@ static inline void vdp_write(const uint8_t reg, const uint8_t value) {
 
                 if (vdp.code == 2) {
                     // printf("Register write %x %x\n", value & 0xf, control_word & 0xff);
-                    vdp.registers[value & 0xf] = control_word & 0xff;
+                    uint8_t reg_idx = value & 0xf;
+                    uint8_t reg_val = control_word & 0xff;
+                    vdp.registers[reg_idx] = reg_val;
+                    if (reg_idx == R10_LINE_COUNTER) {
+                        vdp.line_interrupt_counter = reg_val;
+                    }
 
                     vdp.nametable = &VRAM[(vdp.registers[R2_NAMETABLE_BASE_ADDRESS] << 10) & 0x3800];
                     vdp.sprites = &VRAM[(vdp.registers[R5_SPRITE_ATTRIBUTE_TABLE_BASE_ADDRESS] << 7) & 0x3F00];

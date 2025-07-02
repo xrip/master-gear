@@ -208,10 +208,13 @@ static inline size_t readfile(const char *pathname, uint8_t *dst) {
 // Sega Master System Frame update cycle
 static inline void sms_frame() {
     int cpu_cycles = 0;
-    uint8_t interrut_line = vdp.registers[R10_LINE_COUNTER];
+    // Line interrupt counter is now part of VDP state: vdp.line_interrupt_counter
+    // It's loaded when R10 is written, or during VBlank.
+    // Remove old logic: uint8_t interrut_line = vdp.registers[R10_LINE_COUNTER];
 
     const uint8_t sprite_height = vdp.registers[R1_MODE_CONTROL_2] & EXTRA_HEIGHT_ENABLED ? 16 : 8;
     const uint8_t sprites_hshift = vdp.registers[R0_MODE_CONTROL_1] & SHIFT_SPRITES_LEFT_8PIXELS ? 8 : 0;
+    const uint8_t line_interrupt_enabled = vdp.registers[R0_MODE_CONTROL_1] & ENABLE_LINE_INTERRUPT;
 
     const uint8_t hscroll_lock = vdp.registers[R0_MODE_CONTROL_1] & HORIZONTAL_SCROLL_LOCK;
     const uint8_t vscroll = vdp.registers[R9_BACKGROUND_Y_SCROLL];
@@ -220,7 +223,12 @@ static inline void sms_frame() {
 
     // const int hscroll_base = 256 - vdp.registers[R8_BACKGROUND_X_SCROLL];
 
-    for (scanline = 0; scanline < 192; scanline++) {
+    // Determine active display height (typically 192 for SMS default)
+    // TODO: This should be dynamically determined based on VDP mode registers (R0, R1) if supporting 224/240 line modes.
+    // For now, assuming standard 192 lines for active display.
+    const int active_display_height = 192;
+
+    for (scanline = 0; scanline < active_display_height; scanline++) { // Active Display Period (0-191 for 192-line mode)
         uint8_t priority_table[SMS_WIDTH + 8]; // allow 8 pixels overrun
 
         const int hscroll = hscroll_lock && scanline < 16 ? 0 : vdp.registers[R8_BACKGROUND_X_SCROLL];
@@ -300,25 +308,75 @@ static inline void sms_frame() {
             }
         }
 
-
-        if (interrut_line == scanline && vdp.registers[R0_MODE_CONTROL_1] & ENABLE_LINE_INTERRUPT) {
-            IntZ80(&cpu, INT_IRQ);
-            interrut_line = scanline + vdp.registers[R10_LINE_COUNTER];
+        // --- Line Interrupt Logic (during active display) ---
+        if (line_interrupt_enabled) {
+            vdp.line_interrupt_counter--;
+            if (vdp.line_interrupt_counter == 0xFF) { // Underflowed (became -1 from 0)
+                // TODO: Optionally set a specific HINT flag in vdp.status if your vdp_status() read logic needs it.
+                // vdp.status |= VDP_LINE_INT_PENDING_FLAG; (Define this if needed)
+                IntZ80(&cpu, INT_IRQ); // Signal IRQ to CPU
+                vdp.line_interrupt_counter = vdp.registers[R10_LINE_COUNTER]; // Reload counter
+            }
         }
+        // --- End Line Interrupt Logic ---
+
         cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
     }
+
+    // --- VBLANK Period Start ---
+    // At this point, scanline = active_display_height (e.g., 192)
+
+    // 1. Frame Interrupt (VSync) Flag setting
     vdp.status |= VDP_VSYNC_PENDING;
 
-    cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
-    scanline++;
-
-    // vblank period
-    while (scanline++ < 262) {
-        if (vdp.status & VDP_VSYNC_PENDING && vdp.registers[R1_MODE_CONTROL_2] & ENABLE_FRAME_INTERRUPT) {
+    // 2. Line Interrupt Decrement/Check for the *first* line of VBlank (e.g., scanline 192)
+    if (line_interrupt_enabled) {
+        vdp.line_interrupt_counter--;
+        if (vdp.line_interrupt_counter == 0xFF) { // Underflow on the first VBlank line
+            // TODO: Optionally set HINT flag in vdp.status
             IntZ80(&cpu, INT_IRQ);
+            vdp.line_interrupt_counter = vdp.registers[R10_LINE_COUNTER]; // Reload
         }
-        cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
     }
+
+    // 3. Frame Interrupt (VSync) Generation for the first line of VBlank
+    if (vdp.registers[R1_MODE_CONTROL_2] & ENABLE_FRAME_INTERRUPT) {
+        // VDP_VSYNC_PENDING flag is already set.
+        IntZ80(&cpu, INT_IRQ);
+    }
+
+    cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles); // CPU cycles for the first VBlank line (e.g., scanline 192)
+    scanline++; // scanline becomes active_display_height + 1 (e.g., 193)
+
+    // Remaining VBlank lines
+    // TODO: Use actual PAL/NTSC lines from a VDP state variable (e.g., vdp.lines_per_frame)
+    const uint16_t total_lines_per_frame = 262; // Assuming NTSC for now
+
+    while (scanline < total_lines_per_frame) {
+        // Reload line interrupt counter from R10 on the line *after* the first VBlank line.
+        // This prepares it for the next frame if it wasn't already reloaded by an interrupt.
+        if (scanline == (active_display_height + 1)) {
+             if (line_interrupt_enabled) { // Only reload if enabled, otherwise it stays as is.
+                vdp.line_interrupt_counter = vdp.registers[R10_LINE_COUNTER];
+             }
+        }
+        // Frame interrupt is typically asserted once when VDP_VSYNC_PENDING is set and enabled.
+        // The CPU's interrupt handler or a read of vdp_status() would clear the pending state.
+        // Repeatedly calling IntZ80 here for frame interrupt might be incorrect unless vint is re-asserted.
+        // if (vdp.status & VDP_VSYNC_PENDING && vdp.registers[R1_MODE_CONTROL_2] & ENABLE_FRAME_INTERRUPT) {
+        // IntZ80(&cpu, INT_IRQ); // This was in the original code, assess if needed or if single assertion is enough.
+        // }
+        cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
+        scanline++; // Increment scanline for the loop condition
+    }
+    // At the end of the frame, vdp.line_interrupt_counter should hold the value from R10
+    // if line interrupts are enabled, ready for the next frame. The reload at active_display_height + 1
+    // should handle this.
+    // If line interrupts were disabled, it holds its last decremented value.
+    // If R10 was written to during vblank when line interrupts were disabled, it would have been updated by vdp_write.
+    // A final defensive reload might be:
+    // if (line_interrupt_enabled) vdp.line_interrupt_counter = vdp.registers[R10_LINE_COUNTER];
+
 }
 
 static inline void sg1000_frame() {
