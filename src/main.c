@@ -301,9 +301,11 @@ static inline void sms_frame() {
         }
 
 
-        if (interrut_line == scanline && vdp.registers[R0_MODE_CONTROL_1] & ENABLE_LINE_INTERRUPT) {
-            IntZ80(&cpu, INT_IRQ);
-            interrut_line = scanline + vdp.registers[R10_LINE_COUNTER];
+        if (vdp.registers[R0_MODE_CONTROL_1] & ENABLE_LINE_INTERRUPT) {
+            if (interrut_line-- == 0) {
+                IntZ80(&cpu, INT_IRQ);
+                interrut_line = vdp.registers[R10_LINE_COUNTER];
+            }
         }
         cpu_cycles = ExecZ80(&cpu, CYCLES_PER_LINE - cpu_cycles);
     }
