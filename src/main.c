@@ -269,10 +269,16 @@ static inline void sms_frame() {
         }
 
         // Sprites rendering loop
+        uint8_t sprites_on_line = 0;
         for (int sprite_index = 0; sprite_index < SPRITE_COUNT; ++sprite_index) {
-            const uint8_t sprite_y = vdp.sprites[sprite_index] + 1;
-            if (sprite_y == 208 + 1) break; // dont render anymore
+            const uint8_t sprite_y = vdp.sprites[sprite_index];
+            if (sprite_y == 208) break; // dont render anymore
             if (scanline >= sprite_y && scanline < sprite_y + sprite_height) {
+                if (sprites_on_line++ > 8) {
+                    vdp.status |= VDP_SPRITE_OVERFLOW;
+                    break;
+                }
+
                 const uint8_t sprite_x = vdp.sprites[128 + sprite_index * 2];
 
                 const uint16_t tile_index = sprites_offset + vdp.sprites[128 + sprite_index * 2 + 1];
